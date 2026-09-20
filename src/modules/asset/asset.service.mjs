@@ -500,7 +500,11 @@ class AssetService {
         id: parseInt(id),
       },
       include: {
-        sub_category: true,
+        sub_category: {
+          include: {
+            category: true,
+          },
+        },
         images: true,
         file: true,
       },

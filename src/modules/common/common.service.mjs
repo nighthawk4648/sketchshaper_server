@@ -27,6 +27,13 @@ class CommonService {
           { short_description: { contains: searchTerm } },
         ],
       },
+      include: {
+        sub_category: {
+          include: {
+            category: true,
+          },
+        },
+      },
     });
 
     const [category, subCategory, asset] = await Promise.all([
