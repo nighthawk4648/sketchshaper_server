@@ -8,7 +8,11 @@ const assetRouter = Router();
 // Chunked upload endpoints (specific routes first)
 assetRouter.post("/initialize", assetController.initializeUpload);
 assetRouter.post("/:id/initialize", assetController.initializeUploadWithId);
-assetRouter.post("/upload-chunk", chunkUpload.single('chunk'), assetController.uploadChunk);
+assetRouter.post(
+  "/upload-chunk",
+  chunkUpload.single("chunk"),
+  assetController.uploadChunk,
+);
 assetRouter.post("/complete", assetController.completeUpload);
 
 // Get assets with pagination (must come before /:id route)
@@ -18,11 +22,22 @@ assetRouter.get("/pages", assetController.getAssetsByPagination);
 assetRouter.get("/status/:uploadSessionId", assetController.getUploadStatus);
 assetRouter.delete("/cancel/:uploadSessionId", assetController.cancelUpload);
 
+// Access type toggle endpoints
+assetRouter.patch("/:id/access-type", assetController.updateAssetAccessType);
+assetRouter.post(
+  "/bulk-access-type",
+  assetController.bulkUpdateAssetAccessType,
+);
+
 // Download asset file
 assetRouter.get("/:id/download", assetController.downloadAsset);
 
 // Update preview image
-assetRouter.put("/:id/preview", upload.any(), assetController.updatePreviewImage);
+assetRouter.put(
+  "/:id/preview",
+  upload.any(),
+  assetController.updatePreviewImage,
+);
 
 // CRUD operations (parameterized route last)
 assetRouter

@@ -23,10 +23,23 @@ model User {
   updated_at DateTime @updatedAt
 }
 
+model ContactMessage {
+  id         Int      @id @default(autoincrement())
+  name       String   @db.VarChar(100)
+  email      String   @db.VarChar(254)
+  message    String   @db.LongText
+  status     String   @default("NEW") @db.VarChar(20)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([status])
+  @@index([created_at])
+}
+
 model Category {
   id                Int           @id @default(autoincrement())
   name              String
-  short_description String   @db.LongText
+  short_description String        @db.LongText
   image             String?
   sub_categories    SubCategory[]
   meta_title        String?
@@ -56,15 +69,19 @@ model Asset {
   resolution        String
   size              String
   download_link     String?
-  short_description String?   @db.LongText
+  short_description String?      @db.LongText
   sub_category      SubCategory  @relation(fields: [sub_category_id], references: [id], onDelete: Cascade)
   sub_category_id   Int
   images            AssetImage[]
   file              AssetFile?
+  access_type       String       @default("free")
   meta_title        String?
   meta_description  String?      @db.LongText
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
+
+  @@index([access_type])
+  @@index([sub_category_id])
 }
 
 model AssetImage {
@@ -77,20 +94,20 @@ model AssetImage {
 }
 
 model AssetFile {
-  id                   Int      @id @default(autoincrement())
-  asset_id             Int      @unique
-  asset                Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
-  main_file            String   @default("")
-  file_type            String   @default("")
-  file_size            BigInt   @default(0)
-  upload_status        String   @default("pending")
-  upload_progress      Float    @default(0)
-  uploaded_chunks      Int      @default(0)
-  total_chunks         Int      @default(0)
-  chunk_size           Int      @default(5242880)
-  upload_session_id    String?  @unique
-  created_at           DateTime @default(now())
-  updated_at           DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  asset_id          Int      @unique
+  asset             Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+  main_file         String   @default("")
+  file_type         String   @default("")
+  file_size         BigInt   @default(0)
+  upload_status     String   @default("pending")
+  upload_progress   Float    @default(0)
+  uploaded_chunks   Int      @default(0)
+  total_chunks      Int      @default(0)
+  chunk_size        Int      @default(5242880)
+  upload_session_id String?  @unique
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
   @@index([upload_session_id])
   @@index([upload_status])
@@ -199,7 +216,6 @@ model Blog {
   updated_at        DateTime @updatedAt
 }
 
-
 model Gallery {
   id         Int      @id @default(autoincrement())
   image      String
@@ -208,58 +224,26 @@ model Gallery {
 }
 
 model PatreonUser {
-  id                  Int       @id @default(autoincrement())
-  patreon_id          String    @unique
-  email               String    @unique
+  id                  Int      @id @default(autoincrement())
+  patreon_id          String   @unique
+  email               String   @unique
   full_name           String?
-  access_token        String    @db.Text
-  refresh_token       String    @db.Text
+  access_token        String   @db.Text
+  refresh_token       String   @db.Text
   token_expires_at    DateTime
   membership_tier     String?
-  is_active_patron    Boolean   @default(false)
+  is_active_patron    Boolean  @default(false)
   pledge_amount_cents Int?
-  last_verified_at    DateTime  @default(now())
-  created_at          DateTime  @default(now())
-  updated_at          DateTime  @updatedAt
+  last_verified_at    DateTime @default(now())
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
 }
 
-model SketchShaperProCategory {
-  id                Int                    @id @default(autoincrement())
-  name              String
-  preview_image     String
-  meta_title        String?
-  meta_description  String?                @db.LongText
-  files             SketchShaperProFile[]
-  created_at        DateTime               @default(now())
-  updated_at        DateTime               @updatedAt
-}
 
-model SketchShaperProFile {
-  id                           Int                     @id @default(autoincrement())
-  name                         String
-  preview_image                String
-  main_file                    String
-  file_type                    String // .skp, .zip, .png, .jpeg
-  size                         String // Size in MB
-  size_bytes                   BigInt // Size in bytes for accurate tracking
-  upload_status                String                  @default("pending") // pending, uploading, completed, failed
-  upload_progress              Float                   @default(0) // 0-100
-  uploaded_chunks              Int                     @default(0)
-  total_chunks                 Int                     @default(0)
-  chunk_size                   Int                     @default(5242880) // 5MB default chunk size
-  upload_session_id            String?                 @unique
-  sketchshaper_pro_category    SketchShaperProCategory @relation(fields: [sketchshaper_pro_category_id], references: [id], onDelete: Cascade)
-  sketchshaper_pro_category_id Int
-  created_at                   DateTime                @default(now())
-  updated_at                   DateTime                @updatedAt
-
-  @@index([upload_session_id])
-  @@index([upload_status])
-}
 
 model ExtensionDownload {
   id         Int      @id @default(autoincrement())
-  name       String   // Extension name (e.g., "MyExtension", "SketchPlugin")
+  name       String // Extension name (e.g., "MyExtension", "SketchPlugin")
   count      Int      @default(0) // Total download count
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt

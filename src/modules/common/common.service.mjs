@@ -1,68 +1,53 @@
-import { prisma } from '../../db/prisma.mjs';
+import { prisma } from "../../db/prisma.mjs";
 
 class CommonService {
-	async search(searchTerm) {
-		// category find by name and short_description
-		// const category = await Category.find({
-		// 	$or: [
-		// 		{ name: { $regex: searchTerm, $options: 'i' } },
-		// 		{ short_description: { $regex: searchTerm, $options: 'i' } },
-		// 	],
-		// });
+  async search(searchTerm) {
+    const categoryPromise = prisma.category.findMany({
+      where: {
+        OR: [
+          { name: { contains: searchTerm } },
+          { short_description: { contains: searchTerm } },
+        ],
+      },
+    });
 
-		// const subCategory = await SubCategory.find({
-		// 	$or: [
-		// 		{ name: { $regex: searchTerm, $options: 'i' } },
-		// 		{ short_description: { $regex: searchTerm, $options: 'i' } },
-		// 	],
-		// });
+    const subCategoryPromise = prisma.subCategory.findMany({
+      where: {
+        OR: [
+          { name: { contains: searchTerm } },
+          { short_description: { contains: searchTerm } },
+        ],
+      },
+    });
 
-		// const asset = await Asset.find({
-		// 	$or: [
-		// 		{ name: { $regex: searchTerm, $options: 'i' } },
-		// 		{ description: { $regex: searchTerm, $options: 'i' } },
-		// 	],
-		// });
+    const assetPromise = prisma.asset.findMany({
+      where: {
+        OR: [
+          { name: { contains: searchTerm } },
+          { short_description: { contains: searchTerm } },
+        ],
+      },
+      include: {
+        sub_category: {
+          include: {
+            category: true,
+          },
+        },
+      },
+    });
 
-		const categoryPromise = prisma.category.findMany({
-			where: {
-				OR: [
-					{ name: { contains: searchTerm, } },
-					{ short_description: { contains: searchTerm, } },
-				],
-			},
-		});
+    const [category, subCategory, asset] = await Promise.all([
+      categoryPromise,
+      subCategoryPromise,
+      assetPromise,
+    ]);
 
-		const subCategoryPromise = prisma.subCategory.findMany({
-			where: {
-				OR: [
-					{ name: { contains: searchTerm, } },
-					{ short_description: { contains: searchTerm, } },
-				],
-			},
-		});
-
-		const assetPromise = prisma.asset.findMany({
-			where: {
-				OR: [
-					{ name: { contains: searchTerm, } },
-					{ short_description: { contains: searchTerm, } },
-				],
-			},
-		});
-
-		const [category, subCategory, asset] = await Promise.all([
-			categoryPromise,
-			subCategoryPromise,
-			assetPromise,
-		]);
-
-		return {
-			category,
-			subCategory,
-			asset,
-		};
-	}
+    return {
+      category,
+      subCategory,
+      asset,
+    };
+  }
 }
 
 export default new CommonService();
