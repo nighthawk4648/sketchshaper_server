@@ -82,6 +82,12 @@ class AssetService {
       },
     });
 
+    // Auto-update Asset.size from the browser-reported total file size
+    await prisma.asset.update({
+      where: { id: finalAssetId },
+      data: { size: chunkUploadHelper.formatBytes(parseInt(totalSize)) },
+    });
+
     return {
       assetId: finalAssetId,
       uploadSessionId,
@@ -196,6 +202,12 @@ class AssetService {
       },
     });
 
+    // Auto-update Asset.size with the actual on-disk merged file size (ground truth)
+    await prisma.asset.update({
+      where: { id: assetIdInt },
+      data: { size: chunkUploadHelper.formatBytes(fileSizeInt) },
+    });
+
     // Convert BigInt to string for JSON serialization
     const fileResponse = {
       ...assetFile,
@@ -286,6 +298,7 @@ class AssetService {
       data: {
         ...payload,
         ...cover,
+        size: payload.size || "",  // default to "" if not provided (auto-set later by upload)
         access_type: payload.access_type || "free",
         sub_category_id: parseInt(payload.sub_category_id),
       },
