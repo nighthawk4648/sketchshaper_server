@@ -298,7 +298,7 @@ class AssetService {
       data: {
         ...payload,
         ...cover,
-        size: payload.size || "",  // default to "" if not provided (auto-set later by upload)
+        size: payload.size || "", // default to "" if not provided (auto-set later by upload)
         access_type: payload.access_type || "free",
         sub_category_id: parseInt(payload.sub_category_id),
       },
@@ -381,6 +381,50 @@ class AssetService {
         ...cover,
       },
     });
+
+    // Delete additional images that were removed in the UI before saving
+    const removedImageIds = Array.isArray(payload.removedImageIds)
+      ? payload.removedImageIds.filter((n) => !isNaN(n))
+      : [];
+
+    if (removedImageIds.length > 0) {
+      const imagesToDelete = await prisma.assetImage.findMany({
+        where: { id: { in: removedImageIds } },
+      });
+      for (const img of imagesToDelete) {
+        const imgPath = path.join(process.cwd(), "uploads", img.image);
+        try {
+          if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+        } catch (e) {
+          console.error("Error deleting asset image from disk:", e);
+        }
+      }
+      await prisma.assetImage.deleteMany({
+        where: { id: { in: removedImageIds } },
+      });
+    }
+
+    // Delete the existing 3D model file if the user removed it before saving
+    if (payload.delete_file === "true") {
+      const assetFile = await prisma.assetFile.findUnique({
+        where: { asset_id: assetId },
+      });
+      if (assetFile?.main_file) {
+        const filePath = path.join(
+          process.cwd(),
+          "uploads",
+          assetFile.main_file,
+        );
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (e) {
+          console.error("Error deleting 3D file from disk:", e);
+        }
+      }
+      if (assetFile) {
+        await prisma.assetFile.delete({ where: { asset_id: assetId } });
+      }
+    }
 
     const assetImages = images.map((image) => ({
       image: image.image,

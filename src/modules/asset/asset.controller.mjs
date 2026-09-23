@@ -147,7 +147,16 @@ class AssetController {
       access_type,
       meta_title,
       meta_description,
+      delete_file,
     } = req.body;
+
+    // Parse removedImageIds[0], removedImageIds[1], ... sent from FormData
+    const removedImageIds = [];
+    Object.keys(req.body).forEach((key) => {
+      if (key.startsWith("removedImageIds[")) {
+        removedImageIds.push(parseInt(req.body[key]));
+      }
+    });
 
     const asset = await assetService.updateAsset(id, {
       name,
@@ -159,6 +168,8 @@ class AssetController {
       access_type,
       meta_title,
       meta_description,
+      delete_file,
+      removedImageIds,
       files: req.files,
     });
     const resDoc = responseHandler(200, "Asset updated successfully", asset);
