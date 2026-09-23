@@ -2,7 +2,6 @@ import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
 
 class BlogService {
-
   async createBlog(payload) {
     const images = {};
     if (isArrayElementExist(payload.files)) {
@@ -12,9 +11,15 @@ class BlogService {
     }
 
     // Construct data object for Prisma
-    const { title, name, short_description, paragraph_one,
+    const {
+      title,
+      name,
+      short_description,
+      paragraph_one,
       paragraph_two,
-      paragraph_three, back_link } = payload;
+      paragraph_three,
+      back_link,
+    } = payload;
 
     const blog = await prisma.blog.create({
       data: {
@@ -25,14 +30,15 @@ class BlogService {
         paragraph_three,
         back_link,
         name,
-        image: images.image || '',
-        bgImage: images.bgImage || '',
+        image: images.image || "",
+        image_alt: payload.image_alt || null,
+        bgImage: images.bgImage || "",
+        bg_image_alt: payload.bg_image_alt || null,
       },
     });
 
     return blog;
   }
-
 
   async updateBlog(id, payload) {
     // Handle files
@@ -44,9 +50,15 @@ class BlogService {
     }
 
     // Construct data object for Prisma
-    const { title, name, short_description, paragraph_one,
+    const {
+      title,
+      name,
+      short_description,
+      paragraph_one,
       paragraph_two,
-      paragraph_three, back_link } = payload;
+      paragraph_three,
+      back_link,
+    } = payload;
 
     const blog = await prisma.blog.update({
       where: {
@@ -62,12 +74,17 @@ class BlogService {
         back_link,
         ...(images.image && { image: images.image }), // Only include image if it exists
         ...(images.bgImage && { bgImage: images.bgImage }), // Only include bgImage if it exists
+        ...(payload.image_alt !== undefined && {
+          image_alt: payload.image_alt,
+        }),
+        ...(payload.bg_image_alt !== undefined && {
+          bg_image_alt: payload.bg_image_alt,
+        }),
       },
     });
 
     return blog;
   }
-
 
   async getBlog() {
     // const blog = await blog.find();
@@ -75,17 +92,17 @@ class BlogService {
     return blog;
   }
 
-  async getBlogByPagination({ page = 1, limit = 10, order = 'desc' }) {
+  async getBlogByPagination({ page = 1, limit = 10, order = "desc" }) {
+    const sortOrder = order?.toLowerCase() === "asc" ? "asc" : "desc";
 
     const blogPromise = await prisma.blog.findMany({
       take: limit || 10,
       skip: (page - 1) * limit,
       orderBy: [
         {
-          id: order
-        }
-      ]
-
+          id: sortOrder,
+        },
+      ],
     });
 
     // const countPromise = blog.countDocuments();
@@ -102,17 +119,16 @@ class BlogService {
         total,
         totalPage,
         currentPage,
-      }
+      },
     };
-
   }
 
   async getBlogById(id) {
     // const blog = await blog.findById(id);
     const blog = await prisma.blog.findUnique({
       where: {
-        id: parseInt(id)
-      }
+        id: parseInt(id),
+      },
     });
     return blog;
   }
@@ -120,11 +136,10 @@ class BlogService {
   async deleteBlog(id) {
     await prisma.blog.delete({
       where: {
-        id: parseInt(id)
-      }
+        id: parseInt(id),
+      },
     });
   }
-
 }
 
 export default new BlogService();

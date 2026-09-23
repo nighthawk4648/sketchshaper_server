@@ -66,6 +66,7 @@ model Asset {
   id                Int          @id @default(autoincrement())
   name              String
   cover             String
+  cover_alt         String?      @db.Text
   resolution        String
   size              String
   download_link     String?
@@ -87,6 +88,7 @@ model Asset {
 model AssetImage {
   id         Int      @id @default(autoincrement())
   image      String
+  alt        String?  @db.Text
   asset_id   Int
   asset      Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
   created_at DateTime @default(now())
@@ -109,7 +111,6 @@ model AssetFile {
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 
-  @@index([upload_session_id])
   @@index([upload_status])
 }
 
@@ -209,7 +210,9 @@ model Blog {
   paragraph_two     String   @db.LongText
   paragraph_three   String   @db.LongText
   image             String
+  image_alt         String?  @db.Text
   bgImage           String
+  bg_image_alt      String?  @db.Text
   back_link         String
   order             Int      @default(0)
   created_at        DateTime @default(now())

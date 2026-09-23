@@ -7,8 +7,8 @@ class PatreonController {
    * Get Patreon OAuth authorization URL
    */
   getAuthUrl = catchError(async (req, res, next) => {
-    const { intent } = req.query;
-    const authUrl = patreonService.getAuthUrl(intent);
+    const { intent, returnUrl } = req.query;
+    const authUrl = patreonService.getAuthUrl(intent, returnUrl);
     const resDoc = responseHandler(200, "Authorization URL generated", {
       authUrl,
     });
@@ -25,6 +25,19 @@ class PatreonController {
       throw new Error("Authorization code is required");
     }
 
+    let returnUrl = "";
+    if (state) {
+      try {
+        const decoded = Buffer.from(state, "base64").toString("utf-8");
+        const parsed = JSON.parse(decoded);
+        if (parsed && parsed.returnUrl) {
+          returnUrl = parsed.returnUrl;
+        }
+      } catch (e) {
+        // state was not base64 JSON, ignore
+      }
+    }
+
     const { config } = await import("../../config/config.mjs");
     const frontendUrl = config.frontend_url;
 
@@ -33,7 +46,10 @@ class PatreonController {
 
       // If frontend URL is configured, redirect with token
       if (frontendUrl) {
-        const redirectUrl = `${frontendUrl}/auth/patreon/callback?token=${result.token}&success=true`;
+        let redirectUrl = `${frontendUrl}/auth/patreon/callback?token=${result.token}&success=true`;
+        if (returnUrl) {
+          redirectUrl += `&returnUrl=${encodeURIComponent(returnUrl)}`;
+        }
         return res.redirect(redirectUrl);
       }
 
@@ -50,10 +66,11 @@ class PatreonController {
       // Handle patron verification errors gracefully
       if (error.message.includes("active patron")) {
         if (frontendUrl) {
-          const { config } = await import("../../config/config.mjs");
-          const campaignId = config.patreon_campaign_id;
           const patreonCampaignUrl = `https://www.patreon.com/sketchshaper`;
-          const redirectUrl = `${frontendUrl}/auth/patreon/callback?error=not_patron&message=${encodeURIComponent(error.message)}&campaignUrl=${encodeURIComponent(patreonCampaignUrl)}`;
+          let redirectUrl = `${frontendUrl}/auth/patreon/callback?error=not_patron&message=${encodeURIComponent(error.message)}&campaignUrl=${encodeURIComponent(patreonCampaignUrl)}`;
+          if (returnUrl) {
+            redirectUrl += `&returnUrl=${encodeURIComponent(returnUrl)}`;
+          }
           return res.redirect(redirectUrl);
         }
         return res.status(403).json({
@@ -62,6 +79,14 @@ class PatreonController {
           message: error.message,
           campaignUrl: "https://www.patreon.com/sketchshaper",
         });
+      }
+
+      if (frontendUrl) {
+        let redirectUrl = `${frontendUrl}/auth/patreon/callback?error=oauth_failed&message=${encodeURIComponent(error.message)}`;
+        if (returnUrl) {
+          redirectUrl += `&returnUrl=${encodeURIComponent(returnUrl)}`;
+        }
+        return res.redirect(redirectUrl);
       }
 
       // Re-throw other errors to be caught by catchError middleware
