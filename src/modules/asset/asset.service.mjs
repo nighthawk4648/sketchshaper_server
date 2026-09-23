@@ -389,7 +389,7 @@ class AssetService {
 
     if (removedImageIds.length > 0) {
       const imagesToDelete = await prisma.assetImage.findMany({
-        where: { id: { in: removedImageIds } },
+        where: { id: { in: removedImageIds }, asset_id: assetId },
       });
       for (const img of imagesToDelete) {
         const imgPath = path.join(process.cwd(), "uploads", img.image);
@@ -400,7 +400,7 @@ class AssetService {
         }
       }
       await prisma.assetImage.deleteMany({
-        where: { id: { in: removedImageIds } },
+        where: { id: { in: removedImageIds }, asset_id: assetId },
       });
     }
 
@@ -423,6 +423,11 @@ class AssetService {
       }
       if (assetFile) {
         await prisma.assetFile.delete({ where: { asset_id: assetId } });
+        // Reset size on the asset record
+        await prisma.asset.update({
+          where: { id: assetId },
+          data: { size: "" },
+        });
       }
     }
 

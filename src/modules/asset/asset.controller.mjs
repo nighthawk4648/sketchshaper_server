@@ -150,11 +150,25 @@ class AssetController {
       delete_file,
     } = req.body;
 
-    // Parse removedImageIds[0], removedImageIds[1], ... sent from FormData
+    // Parse removedImageIds sent from FormData (handles removedImageIds[0], removedImageIds[], or arrays)
     const removedImageIds = [];
+    if (Array.isArray(req.body.removedImageIds)) {
+      req.body.removedImageIds.forEach((val) => {
+        const parsed = parseInt(val);
+        if (!isNaN(parsed) && !removedImageIds.includes(parsed)) {
+          removedImageIds.push(parsed);
+        }
+      });
+    } else if (req.body.removedImageIds) {
+      const parsed = parseInt(req.body.removedImageIds);
+      if (!isNaN(parsed)) removedImageIds.push(parsed);
+    }
     Object.keys(req.body).forEach((key) => {
-      if (key.startsWith("removedImageIds[")) {
-        removedImageIds.push(parseInt(req.body[key]));
+      if (key.startsWith("removedImageIds[") || key.startsWith("removedImageIds")) {
+        const parsed = parseInt(req.body[key]);
+        if (!isNaN(parsed) && !removedImageIds.includes(parsed)) {
+          removedImageIds.push(parsed);
+        }
       }
     });
 
