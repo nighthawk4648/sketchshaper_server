@@ -119,6 +119,9 @@ class AssetController {
   createAsset = catchError(async (req, res, next) => {
     const asset = await assetService.createAsset({
       ...req.body,
+      cover_alt: req.body.cover_alt?.trim()
+        ? req.body.cover_alt.trim().slice(0, 125)
+        : null,
       files: req.files,
     });
     const resDoc = responseHandler(201, "Asset created successfully", asset);
@@ -147,7 +150,37 @@ class AssetController {
       access_type,
       meta_title,
       meta_description,
+      keywords,
+      delete_file,
+      cover_alt,
+      newImageAlts,
+      existingImageAlts,
     } = req.body;
+
+    // Parse removedImageIds sent from FormData (handles removedImageIds[0], removedImageIds[], or arrays)
+    const removedImageIds = [];
+    if (Array.isArray(req.body.removedImageIds)) {
+      req.body.removedImageIds.forEach((val) => {
+        const parsed = parseInt(val);
+        if (!isNaN(parsed) && !removedImageIds.includes(parsed)) {
+          removedImageIds.push(parsed);
+        }
+      });
+    } else if (req.body.removedImageIds) {
+      const parsed = parseInt(req.body.removedImageIds);
+      if (!isNaN(parsed)) removedImageIds.push(parsed);
+    }
+    Object.keys(req.body).forEach((key) => {
+      if (
+        key.startsWith("removedImageIds[") ||
+        key.startsWith("removedImageIds")
+      ) {
+        const parsed = parseInt(req.body[key]);
+        if (!isNaN(parsed) && !removedImageIds.includes(parsed)) {
+          removedImageIds.push(parsed);
+        }
+      }
+    });
 
     const asset = await assetService.updateAsset(id, {
       name,
@@ -159,6 +192,17 @@ class AssetController {
       access_type,
       meta_title,
       meta_description,
+      keywords,
+      delete_file,
+      cover_alt:
+        cover_alt !== undefined
+          ? cover_alt?.trim()
+            ? cover_alt.trim().slice(0, 125)
+            : null
+          : undefined,
+      newImageAlts,
+      existingImageAlts,
+      removedImageIds,
       files: req.files,
     });
     const resDoc = responseHandler(200, "Asset updated successfully", asset);

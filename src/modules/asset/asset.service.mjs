@@ -82,6 +82,12 @@ class AssetService {
       },
     });
 
+    // Auto-update Asset.size from the browser-reported total file size
+    await prisma.asset.update({
+      where: { id: finalAssetId },
+      data: { size: chunkUploadHelper.formatBytes(parseInt(totalSize)) },
+    });
+
     return {
       assetId: finalAssetId,
       uploadSessionId,
@@ -196,6 +202,12 @@ class AssetService {
       },
     });
 
+    // Auto-update Asset.size with the actual on-disk merged file size (ground truth)
+    await prisma.asset.update({
+      where: { id: assetIdInt },
+      data: { size: chunkUploadHelper.formatBytes(fileSizeInt) },
+    });
+
     // Convert BigInt to string for JSON serialization
     const fileResponse = {
       ...assetFile,
@@ -267,25 +279,69 @@ class AssetService {
       }
     });
 
-    if (isArrayElementExist(payload.files)) {
-      payload.files.forEach((file) => {
-        if (file.fieldname === "cover") {
-          cover[file.fieldname] = file.filename;
-        } else {
-          images.push({
-            image: file.filename,
-          });
+    // Parse newImageAlts manifest (tempId -> alt)
+    let newImageAlts = [];
+    if (typeof payload.newImageAlts === "string") {
+      try {
+        newImageAlts = JSON.parse(payload.newImageAlts);
+      } catch (e) {
+        newImageAlts = [];
+      }
+    } else if (Array.isArray(payload.newImageAlts)) {
+      newImageAlts = payload.newImageAlts;
+    }
+    const tempIdAltMap = new Map();
+    if (Array.isArray(newImageAlts)) {
+      newImageAlts.forEach((item) => {
+        const altText = item?.alt?.trim()
+          ? item.alt.trim().slice(0, 125)
+          : null;
+        if (item?.tempId) {
+          tempIdAltMap.set(String(item.tempId), altText);
         }
       });
     }
 
+    if (isArrayElementExist(payload.files)) {
+      let fileIdx = 0;
+      payload.files.forEach((file) => {
+        if (file.fieldname === "cover") {
+          cover[file.fieldname] = file.filename;
+        } else {
+          let matchedAlt = null;
+          if (
+            file.fieldname.startsWith("image_") ||
+            file.fieldname.startsWith("images_")
+          ) {
+            const tempId = file.fieldname.replace(/^(image_|images_)/, "");
+            matchedAlt = tempIdAltMap.get(tempId) || null;
+          } else {
+            matchedAlt = newImageAlts[fileIdx]?.alt?.trim()
+              ? newImageAlts[fileIdx].alt.trim().slice(0, 125)
+              : null;
+          }
+          images.push({
+            image: file.filename,
+            alt: matchedAlt,
+          });
+          fileIdx++;
+        }
+      });
+    }
+
+    const coverAlt = payload.cover_alt || null;
     delete payload.files;
+    delete payload.newImageAlts;
+    delete payload.existingImageAlts;
+    delete payload.cover_alt;
 
     // create asset
     const asset = await prisma.asset.create({
       data: {
         ...payload,
         ...cover,
+        cover_alt: coverAlt,
+        size: payload.size || "", // default to "" if not provided (auto-set later by upload)
         access_type: payload.access_type || "free",
         sub_category_id: parseInt(payload.sub_category_id),
       },
@@ -294,6 +350,7 @@ class AssetService {
     // create asset images
     const assetImages = images.map((image) => ({
       image: image.image,
+      alt: image.alt || null,
       asset_id: asset.id,
     }));
 
@@ -337,14 +394,52 @@ class AssetService {
       }
     });
 
+    // Parse newImageAlts manifest (tempId -> alt)
+    let newImageAlts = [];
+    if (typeof payload.newImageAlts === "string") {
+      try {
+        newImageAlts = JSON.parse(payload.newImageAlts);
+      } catch (e) {
+        newImageAlts = [];
+      }
+    } else if (Array.isArray(payload.newImageAlts)) {
+      newImageAlts = payload.newImageAlts;
+    }
+    const tempIdAltMap = new Map();
+    if (Array.isArray(newImageAlts)) {
+      newImageAlts.forEach((item) => {
+        const altText = item?.alt?.trim()
+          ? item.alt.trim().slice(0, 125)
+          : null;
+        if (item?.tempId) {
+          tempIdAltMap.set(String(item.tempId), altText);
+        }
+      });
+    }
+
     if (isArrayElementExist(payload.files)) {
+      let fileIdx = 0;
       payload.files.forEach((file) => {
         if (file.fieldname === "cover") {
           cover[file.fieldname] = file.filename;
         } else {
+          let matchedAlt = null;
+          if (
+            file.fieldname.startsWith("image_") ||
+            file.fieldname.startsWith("images_")
+          ) {
+            const tempId = file.fieldname.replace(/^(image_|images_)/, "");
+            matchedAlt = tempIdAltMap.get(tempId) || null;
+          } else {
+            matchedAlt = newImageAlts[fileIdx]?.alt?.trim()
+              ? newImageAlts[fileIdx].alt.trim().slice(0, 125)
+              : null;
+          }
           images.push({
             image: file.filename,
+            alt: matchedAlt,
           });
+          fileIdx++;
         }
       });
     }
@@ -365,12 +460,92 @@ class AssetService {
         access_type: payload.access_type || undefined,
         meta_title: payload.meta_title,
         meta_description: payload.meta_description,
+        keywords: payload.keywords,
+        ...(payload.cover_alt !== undefined && {
+          cover_alt: payload.cover_alt,
+        }),
         ...cover,
       },
     });
 
+    // Delete additional images that were removed in the UI before saving
+    const removedImageIds = Array.isArray(payload.removedImageIds)
+      ? payload.removedImageIds.filter((n) => !isNaN(n))
+      : [];
+
+    if (removedImageIds.length > 0) {
+      const imagesToDelete = await prisma.assetImage.findMany({
+        where: { id: { in: removedImageIds }, asset_id: assetId },
+      });
+      for (const img of imagesToDelete) {
+        const imgPath = path.join(process.cwd(), "uploads", img.image);
+        try {
+          if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+        } catch (e) {
+          console.error("Error deleting asset image from disk:", e);
+        }
+      }
+      await prisma.assetImage.deleteMany({
+        where: { id: { in: removedImageIds }, asset_id: assetId },
+      });
+    }
+
+    // Update existing image alts (excluding any staged for removal)
+    let existingImageAlts = [];
+    if (typeof payload.existingImageAlts === "string") {
+      try {
+        existingImageAlts = JSON.parse(payload.existingImageAlts);
+      } catch (e) {
+        existingImageAlts = [];
+      }
+    } else if (Array.isArray(payload.existingImageAlts)) {
+      existingImageAlts = payload.existingImageAlts;
+    }
+    if (Array.isArray(existingImageAlts) && existingImageAlts.length > 0) {
+      for (const imgItem of existingImageAlts) {
+        const imgId = parseInt(imgItem?.id);
+        if (!isNaN(imgId) && !removedImageIds.includes(imgId)) {
+          const normalizedAlt = imgItem?.alt?.trim()
+            ? imgItem.alt.trim().slice(0, 125)
+            : null;
+          await prisma.assetImage.updateMany({
+            where: { id: imgId, asset_id: assetId },
+            data: { alt: normalizedAlt },
+          });
+        }
+      }
+    }
+
+    // Delete the existing 3D model file if the user removed it before saving
+    if (payload.delete_file === "true") {
+      const assetFile = await prisma.assetFile.findUnique({
+        where: { asset_id: assetId },
+      });
+      if (assetFile?.main_file) {
+        const filePath = path.join(
+          process.cwd(),
+          "uploads",
+          assetFile.main_file,
+        );
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (e) {
+          console.error("Error deleting 3D file from disk:", e);
+        }
+      }
+      if (assetFile) {
+        await prisma.assetFile.delete({ where: { asset_id: assetId } });
+        // Reset size on the asset record
+        await prisma.asset.update({
+          where: { id: assetId },
+          data: { size: "" },
+        });
+      }
+    }
+
     const assetImages = images.map((image) => ({
       image: image.image,
+      alt: image.alt || null,
       asset_id: assetId,
     }));
 

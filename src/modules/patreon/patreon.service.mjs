@@ -7,17 +7,24 @@ class PatreonService {
   /**
    * Generate Patreon OAuth URL
    */
-  getAuthUrl(intent = "login") {
+  getAuthUrl(intent = "login", returnUrl = "") {
     const clientId = config.patreon_client_id;
     const redirectUri = config.patreon_redirect_uri;
     const scope = "identity identity[email] identity.memberships";
+
+    // Encode intent and returnUrl into state
+    const stateObj = {
+      intent: intent === "subscribe" ? "subscribe" : "login",
+      returnUrl: returnUrl || "",
+    };
+    const state = Buffer.from(JSON.stringify(stateObj)).toString("base64");
 
     const params = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
       redirect_uri: redirectUri,
       scope: scope,
-      state: intent === "subscribe" ? "subscribe" : "login",
+      state: state,
     });
 
     if (intent === "subscribe" && config.patreon_campaign_id) {
