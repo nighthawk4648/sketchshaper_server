@@ -19,6 +19,9 @@ class BlogService {
       paragraph_two,
       paragraph_three,
       back_link,
+      meta_title,
+      meta_description,
+      keywords,
     } = payload;
 
     const blog = await prisma.blog.create({
@@ -30,6 +33,9 @@ class BlogService {
         paragraph_three,
         back_link,
         name,
+        meta_title: meta_title || null,
+        meta_description: meta_description || null,
+        keywords: keywords || null,
         image: images.image || "",
         image_alt: payload.image_alt || null,
         bgImage: images.bgImage || "",
@@ -58,6 +64,9 @@ class BlogService {
       paragraph_two,
       paragraph_three,
       back_link,
+      meta_title,
+      meta_description,
+      keywords,
     } = payload;
 
     const blog = await prisma.blog.update({
@@ -72,6 +81,9 @@ class BlogService {
         paragraph_two,
         paragraph_three,
         back_link,
+        ...(meta_title !== undefined && { meta_title }),
+        ...(meta_description !== undefined && { meta_description }),
+        ...(keywords !== undefined && { keywords }),
         ...(images.image && { image: images.image }), // Only include image if it exists
         ...(images.bgImage && { bgImage: images.bgImage }), // Only include bgImage if it exists
         ...(payload.image_alt !== undefined && {

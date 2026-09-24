@@ -14,6 +14,9 @@ class BlogsController {
       back_link,
       image_alt,
       bg_image_alt,
+      meta_title,
+      meta_description,
+      keywords,
     } = req.body;
 
     const files = req.files;
@@ -30,6 +33,9 @@ class BlogsController {
       bg_image_alt: bg_image_alt?.trim()
         ? bg_image_alt.trim().slice(0, 125)
         : null,
+      meta_title: meta_title?.trim() || null,
+      meta_description: meta_description?.trim() || null,
+      keywords: keywords?.trim() || null,
       files,
     });
     const resDoc = responseHandler(201, "blog  created successfully", blog);
@@ -48,6 +54,9 @@ class BlogsController {
       back_link,
       image_alt,
       bg_image_alt,
+      meta_title,
+      meta_description,
+      keywords,
     } = req.body;
     const files = req.files;
 
@@ -71,6 +80,13 @@ class BlogsController {
             ? bg_image_alt.trim().slice(0, 125)
             : null
           : undefined,
+      meta_title:
+        meta_title !== undefined ? meta_title?.trim() || null : undefined,
+      meta_description:
+        meta_description !== undefined
+          ? meta_description?.trim() || null
+          : undefined,
+      keywords: keywords !== undefined ? keywords?.trim() || null : undefined,
       files,
     });
 

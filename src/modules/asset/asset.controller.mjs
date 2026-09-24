@@ -150,6 +150,7 @@ class AssetController {
       access_type,
       meta_title,
       meta_description,
+      keywords,
       delete_file,
       cover_alt,
       newImageAlts,
@@ -191,6 +192,7 @@ class AssetController {
       access_type,
       meta_title,
       meta_description,
+      keywords,
       delete_file,
       cover_alt:
         cover_alt !== undefined

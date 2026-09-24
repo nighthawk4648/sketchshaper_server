@@ -460,6 +460,7 @@ class AssetService {
         access_type: payload.access_type || undefined,
         meta_title: payload.meta_title,
         meta_description: payload.meta_description,
+        keywords: payload.keywords,
         ...(payload.cover_alt !== undefined && {
           cover_alt: payload.cover_alt,
         }),
