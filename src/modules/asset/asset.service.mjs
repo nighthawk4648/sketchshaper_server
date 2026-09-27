@@ -232,13 +232,20 @@ class AssetService {
         const isInsideUploads = oldFilePath.startsWith(uploadsDir + path.sep);
         const isDifferentFromNew = oldFilePath !== newFilePath;
 
-        if (isInsideUploads && isDifferentFromNew && fs.existsSync(oldFilePath)) {
+        if (
+          isInsideUploads &&
+          isDifferentFromNew &&
+          fs.existsSync(oldFilePath)
+        ) {
           fs.unlinkSync(oldFilePath);
           console.log(`Cleaned up replaced 3D model file: ${previousMainFile}`);
         }
       } catch (cleanupError) {
         // Non-fatal: do not abort the completed upload if cleanup fails
-        console.error("Non-fatal error cleaning up previous 3D model file:", cleanupError);
+        console.error(
+          "Non-fatal error cleaning up previous 3D model file:",
+          cleanupError,
+        );
       }
     }
 
