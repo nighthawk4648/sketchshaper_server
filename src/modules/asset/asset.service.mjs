@@ -164,6 +164,15 @@ class AssetService {
       throw new Error(`Asset with ID ${finalAssetId} does not exist`);
     }
 
+    const assetIdInt = parseInt(finalAssetId);
+
+    // Identify previous main_file before upserting the new one
+    const previousAssetFile = await prisma.assetFile.findUnique({
+      where: { asset_id: assetIdInt },
+      select: { main_file: true },
+    });
+    const previousMainFile = previousAssetFile?.main_file || null;
+
     const mergedFile = await chunkUploadHelper.mergeChunks(
       uploadSessionId,
       totalChunksInt,
@@ -172,7 +181,6 @@ class AssetService {
 
     const fileType = chunkUploadHelper.getFileExtension(originalFilename);
     const fileSizeInt = parseInt(mergedFile.size || 0) || 0;
-    const assetIdInt = parseInt(finalAssetId);
 
     // Create or update AssetFile record
     const assetFile = await prisma.assetFile.upsert({
@@ -207,6 +215,32 @@ class AssetService {
       where: { id: assetIdInt },
       data: { size: chunkUploadHelper.formatBytes(fileSizeInt) },
     });
+
+    // Safely clean up previous physical 3D file if replacing an existing one
+    if (
+      previousMainFile &&
+      typeof previousMainFile === "string" &&
+      previousMainFile.trim() !== "" &&
+      previousMainFile !== mergedFile.relativePath
+    ) {
+      try {
+        const uploadsDir = path.resolve(process.cwd(), "uploads");
+        const oldFilePath = path.resolve(uploadsDir, previousMainFile);
+        const newFilePath = path.resolve(uploadsDir, mergedFile.relativePath);
+
+        // Security check: ensure path is strictly inside uploadsDir and distinct from new file
+        const isInsideUploads = oldFilePath.startsWith(uploadsDir + path.sep);
+        const isDifferentFromNew = oldFilePath !== newFilePath;
+
+        if (isInsideUploads && isDifferentFromNew && fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+          console.log(`Cleaned up replaced 3D model file: ${previousMainFile}`);
+        }
+      } catch (cleanupError) {
+        // Non-fatal: do not abort the completed upload if cleanup fails
+        console.error("Non-fatal error cleaning up previous 3D model file:", cleanupError);
+      }
+    }
 
     // Convert BigInt to string for JSON serialization
     const fileResponse = {
