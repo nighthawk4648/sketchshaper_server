@@ -23,6 +23,27 @@ function convertBigIntToString(obj) {
 
 class AssetService {
   /**
+   * Helper to normalize asset size from file_size if size is empty/null
+   */
+  normalizeAssetSize(asset) {
+    if (!asset) return asset;
+    if (Array.isArray(asset)) {
+      return asset.map((a) => this.normalizeAssetSize(a));
+    }
+    const fileSizeNum = Number(asset.file?.file_size || 0);
+    if (
+      (!asset.size || (typeof asset.size === "string" && asset.size.trim() === "")) &&
+      fileSizeNum > 0
+    ) {
+      return {
+        ...asset,
+        size: chunkUploadHelper.formatBytes(fileSizeNum),
+      };
+    }
+    return asset;
+  }
+
+  /**
    * Initialize a new upload session for an existing asset
    */
   async initializeUpload(payload) {
@@ -494,7 +515,11 @@ class AssetService {
       data: {
         name: payload.name,
         resolution: payload.resolution,
-        size: payload.size,
+        ...(payload.size && typeof payload.size === "string" && payload.size.trim() !== ""
+          ? { size: payload.size.trim() }
+          : payload.delete_file === "true"
+            ? { size: "" }
+            : {}),
         download_link: payload.download_link,
         short_description: payload.short_description,
         sub_category_id: parseInt(payload.sub_category_id),
@@ -607,7 +632,7 @@ class AssetService {
     }
 
     // Return updated asset with file info
-    return await prisma.asset.findUnique({
+    const updatedAsset = await prisma.asset.findUnique({
       where: { id: assetId },
       include: {
         sub_category: true,
@@ -615,6 +640,7 @@ class AssetService {
         file: true,
       },
     });
+    return this.normalizeAssetSize(convertBigIntToString(updatedAsset));
   }
 
   async getAssets() {
@@ -629,7 +655,7 @@ class AssetService {
         id: "desc",
       },
     });
-    return convertBigIntToString(assets);
+    return this.normalizeAssetSize(convertBigIntToString(assets));
   }
 
   async getAssetsByPagination({
@@ -673,7 +699,7 @@ class AssetService {
     const currentPage = page;
 
     return {
-      result: convertBigIntToString(assets),
+      result: this.normalizeAssetSize(convertBigIntToString(assets)),
       pagination: {
         total,
         totalPage,
@@ -693,7 +719,7 @@ class AssetService {
         file: true,
       },
     });
-    return convertBigIntToString(updated);
+    return this.normalizeAssetSize(convertBigIntToString(updated));
   }
 
   async bulkUpdateAssetAccessType(ids, access_type) {
@@ -725,7 +751,7 @@ class AssetService {
         file: true,
       },
     });
-    return convertBigIntToString(asset);
+    return this.normalizeAssetSize(convertBigIntToString(asset));
   }
 
   async deleteAsset(id) {
