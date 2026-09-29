@@ -7,6 +7,20 @@ import jwt from "jsonwebtoken";
 import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
 
+const cleanupUploadedFiles = (files) => {
+  if (Array.isArray(files)) {
+    for (const file of files) {
+      if (file?.path) {
+        try {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        } catch (e) {
+          console.error("Failed to clean up uploaded file:", e);
+        }
+      }
+    }
+  }
+};
+
 class AssetController {
   /**
    * Initialize upload session
@@ -117,6 +131,56 @@ class AssetController {
   });
 
   createAsset = catchError(async (req, res, next) => {
+    // 1. Validate Asset Name
+    if (!req.body.name || !req.body.name.trim()) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "Asset name is required",
+      });
+    }
+
+    // 2. Validate Sub-Category ID
+    const subCategoryId = parseInt(req.body.sub_category_id);
+    if (
+      !req.body.sub_category_id ||
+      isNaN(subCategoryId) ||
+      subCategoryId <= 0
+    ) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "Valid sub-category is required",
+      });
+    }
+
+    const subCategory = await prisma.subCategory.findUnique({
+      where: { id: subCategoryId },
+    });
+    if (!subCategory) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "Selected sub-category does not exist",
+      });
+    }
+
+    // 3. Validate Primary Cover Image
+    const hasCover =
+      Array.isArray(req.files) &&
+      req.files.some((f) => f.fieldname === "cover");
+    if (!hasCover) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "Primary cover image is required",
+      });
+    }
+
     const asset = await assetService.createAsset({
       ...req.body,
       cover_alt: req.body.cover_alt?.trim()
@@ -133,6 +197,20 @@ class AssetController {
 
     // Validate that ID is numeric
     if (!/^\d+$/.test(id)) {
+      cleanupUploadedFiles(req.files);
+      return res.status(404).json({
+        statusCode: 404,
+        status: "error",
+        message: "Asset not found",
+      });
+    }
+
+    const parsedAssetId = parseInt(id);
+    const existingAsset = await prisma.asset.findUnique({
+      where: { id: parsedAssetId },
+    });
+    if (!existingAsset) {
+      cleanupUploadedFiles(req.files);
       return res.status(404).json({
         statusCode: 404,
         status: "error",
@@ -156,6 +234,38 @@ class AssetController {
       newImageAlts,
       existingImageAlts,
     } = req.body;
+
+    if (name !== undefined && (!name || !name.trim())) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "Asset name cannot be empty",
+      });
+    }
+
+    if (sub_category_id !== undefined) {
+      const parsedSubId = parseInt(sub_category_id);
+      if (isNaN(parsedSubId) || parsedSubId <= 0) {
+        cleanupUploadedFiles(req.files);
+        return res.status(400).json({
+          statusCode: 400,
+          status: "error",
+          message: "Valid sub-category is required",
+        });
+      }
+      const subCategory = await prisma.subCategory.findUnique({
+        where: { id: parsedSubId },
+      });
+      if (!subCategory) {
+        cleanupUploadedFiles(req.files);
+        return res.status(400).json({
+          statusCode: 400,
+          status: "error",
+          message: "Selected sub-category does not exist",
+        });
+      }
+    }
 
     // Parse removedImageIds sent from FormData (handles removedImageIds[0], removedImageIds[], or arrays)
     const removedImageIds = [];
