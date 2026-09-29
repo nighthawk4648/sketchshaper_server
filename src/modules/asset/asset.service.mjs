@@ -32,7 +32,8 @@ class AssetService {
     }
     const fileSizeNum = Number(asset.file?.file_size || 0);
     if (
-      (!asset.size || (typeof asset.size === "string" && asset.size.trim() === "")) &&
+      (!asset.size ||
+        (typeof asset.size === "string" && asset.size.trim() === "")) &&
       fileSizeNum > 0
     ) {
       return {
@@ -397,15 +398,21 @@ class AssetService {
     delete payload.existingImageAlts;
     delete payload.cover_alt;
 
-    // create asset
+    // create asset with whitelisted fields
     const asset = await prisma.asset.create({
       data: {
-        ...payload,
-        ...cover,
+        name: payload.name,
+        cover: cover.cover || payload.cover || "",
         cover_alt: coverAlt,
+        resolution: payload.resolution || "",
         size: payload.size || "", // default to "" if not provided (auto-set later by upload)
-        access_type: payload.access_type || "free",
+        download_link: payload.download_link || null,
+        short_description: payload.short_description || null,
         sub_category_id: parseInt(payload.sub_category_id),
+        access_type: payload.access_type || "free",
+        meta_title: payload.meta_title || null,
+        meta_description: payload.meta_description || null,
+        keywords: payload.keywords || null,
       },
     });
 
@@ -432,8 +439,8 @@ class AssetService {
       }
     }
 
-    // Return asset with file info
-    return await prisma.asset.findUnique({
+    // Return asset with file info (convert BigInt and normalize size)
+    const createdAsset = await prisma.asset.findUnique({
       where: { id: asset.id },
       include: {
         sub_category: true,
@@ -441,6 +448,8 @@ class AssetService {
         file: true,
       },
     });
+
+    return this.normalizeAssetSize(convertBigIntToString(createdAsset));
   }
 
   async updateAsset(id, payload) {
@@ -513,20 +522,37 @@ class AssetService {
         id: assetId,
       },
       data: {
-        name: payload.name,
-        resolution: payload.resolution,
-        ...(payload.size && typeof payload.size === "string" && payload.size.trim() !== ""
+        name: payload.name !== undefined ? payload.name : undefined,
+        resolution:
+          payload.resolution !== undefined ? payload.resolution : undefined,
+        ...(payload.size &&
+        typeof payload.size === "string" &&
+        payload.size.trim() !== ""
           ? { size: payload.size.trim() }
           : payload.delete_file === "true"
             ? { size: "" }
             : {}),
-        download_link: payload.download_link,
-        short_description: payload.short_description,
-        sub_category_id: parseInt(payload.sub_category_id),
+        download_link:
+          payload.download_link !== undefined
+            ? payload.download_link
+            : undefined,
+        short_description:
+          payload.short_description !== undefined
+            ? payload.short_description
+            : undefined,
+        sub_category_id:
+          payload.sub_category_id !== undefined &&
+          !isNaN(parseInt(payload.sub_category_id))
+            ? parseInt(payload.sub_category_id)
+            : undefined,
         access_type: payload.access_type || undefined,
-        meta_title: payload.meta_title,
-        meta_description: payload.meta_description,
-        keywords: payload.keywords,
+        meta_title:
+          payload.meta_title !== undefined ? payload.meta_title : undefined,
+        meta_description:
+          payload.meta_description !== undefined
+            ? payload.meta_description
+            : undefined,
+        keywords: payload.keywords !== undefined ? payload.keywords : undefined,
         ...(payload.cover_alt !== undefined && {
           cover_alt: payload.cover_alt,
         }),
