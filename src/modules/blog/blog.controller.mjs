@@ -1,6 +1,7 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import blogService from "./blog.service.mjs";
+import { revalidateFrontend } from "../../utils/revalidate.mjs";
 
 class BlogsController {
   createBlog = catchError(async (req, res, next) => {
@@ -38,6 +39,7 @@ class BlogsController {
       keywords: keywords?.trim() || null,
       files,
     });
+    revalidateFrontend(["blogs"]);
     const resDoc = responseHandler(201, "blog  created successfully", blog);
     res.status(201).json(resDoc);
   });
@@ -90,6 +92,8 @@ class BlogsController {
       files,
     });
 
+    revalidateFrontend(["blogs", `blog-${id}`]);
+
     // Send response
     const resDoc = responseHandler(200, "blog updated successfully", blog);
     res.status(200).json(resDoc);
@@ -120,6 +124,7 @@ class BlogsController {
 
   deleteBlog = catchError(async (req, res, next) => {
     await blogService.deleteBlog(req.params.id);
+    revalidateFrontend(["blogs", `blog-${req.params.id}`]);
     const resDoc = responseHandler(200, "blog deleted successfully");
     res.status(200).json(resDoc);
   });

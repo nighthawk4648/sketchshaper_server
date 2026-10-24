@@ -1,6 +1,7 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import categoryService from "./category.service.mjs";
+import { revalidateFrontend } from "../../utils/revalidate.mjs";
 
 class CategoryController {
   createCategory = catchError(async (req, res, next) => {
@@ -9,6 +10,7 @@ class CategoryController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend(["categories", "general"]);
     const resDoc = responseHandler(201, "Category created successfully", category);
     res.status(201).json(resDoc);
   });
@@ -18,6 +20,7 @@ class CategoryController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend(["categories", `category-${req.params.id}`, "general"]);
     const resDoc = responseHandler(200, "Category updated successfully", category);
     res.status(200).json(resDoc);
   });
@@ -63,6 +66,7 @@ class CategoryController {
 
   deleteCategory = catchError(async (req, res, next) => {
     await categoryService.deleteCategory(req.params.id);
+    revalidateFrontend(["categories", `category-${req.params.id}`, "general"]);
     const resDoc = responseHandler(200, "Category deleted successfully");
     res.status(200).json(resDoc);
   });
