@@ -12,6 +12,7 @@ const {
   PATREON_REDIRECT_URI,
   PATREON_CAMPAIGN_ID,
   FRONTEND_URL,
+  REVALIDATION_SECRET,
 } = process.env;
 
 export const config = {
@@ -24,4 +25,5 @@ export const config = {
   patreon_redirect_uri: PATREON_REDIRECT_URI,
   patreon_campaign_id: PATREON_CAMPAIGN_ID,
   frontend_url: FRONTEND_URL,
+  revalidation_secret: REVALIDATION_SECRET,
 };

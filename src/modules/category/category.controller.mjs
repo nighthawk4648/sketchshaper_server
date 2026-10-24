@@ -1,6 +1,9 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import categoryService from "./category.service.mjs";
+import { revalidateFrontend } from "../../utils/revalidateFrontend.mjs";
+import { buildCatalogTags } from "../../utils/revalidateTags.mjs";
+import { prisma } from "../../db/prisma.mjs";
 
 class CategoryController {
   createCategory = catchError(async (req, res, next) => {
@@ -11,15 +14,40 @@ class CategoryController {
     });
     const resDoc = responseHandler(201, "Category created successfully", category);
     res.status(201).json(resDoc);
+
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        categoryIds: category?.id,
+      }),
+    });
   });
 
   updateCategory = catchError(async (req, res, next) => {
+    const catId = parseInt(req.params.id);
+
+    // Fetch child subcategory IDs first, wrapped in .catch(() => null)
+    const childSubCategories = await prisma.subCategory
+      .findMany({
+        where: { category_id: catId },
+        select: { id: true },
+      })
+      .catch(() => null);
+
     const category = await categoryService.updateCategory(req.params.id, {
       ...req.body,
       files: req.files,
     });
     const resDoc = responseHandler(200, "Category updated successfully", category);
     res.status(200).json(resDoc);
+
+    const subCategoryIds = (childSubCategories || []).map((s) => s.id);
+
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        subCategoryIds,
+        categoryIds: req.params.id,
+      }),
+    });
   });
 
   getCategorys = catchError(async (req, res, next) => {
@@ -62,9 +90,51 @@ class CategoryController {
   });
 
   deleteCategory = catchError(async (req, res, next) => {
-    await categoryService.deleteCategory(req.params.id);
+    const { id } = req.params;
+    const catId = parseInt(id);
+
+    // Fetch its subcategory ids and asset ids BEFORE deleting
+    const existingCategory = await prisma.category
+      .findUnique({
+        where: { id: catId },
+        select: {
+          id: true,
+          sub_categories: {
+            select: {
+              id: true,
+              assets: {
+                select: { id: true },
+              },
+            },
+          },
+        },
+      })
+      .catch(() => null);
+
+    await categoryService.deleteCategory(id);
     const resDoc = responseHandler(200, "Category deleted successfully");
     res.status(200).json(resDoc);
+
+    const subCategoryIds = [];
+    const assetIds = [];
+    if (existingCategory?.sub_categories) {
+      for (const sub of existingCategory.sub_categories) {
+        subCategoryIds.push(sub.id);
+        if (sub.assets) {
+          for (const a of sub.assets) {
+            assetIds.push(a.id);
+          }
+        }
+      }
+    }
+
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds,
+        subCategoryIds,
+        categoryIds: id,
+      }),
+    });
   });
 }
 

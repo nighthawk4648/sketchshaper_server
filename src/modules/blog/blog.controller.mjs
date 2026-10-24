@@ -1,6 +1,7 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import blogService from "./blog.service.mjs";
+import { revalidateFrontend } from "../../utils/revalidateFrontend.mjs";
 
 class BlogsController {
   createBlog = catchError(async (req, res, next) => {
@@ -40,6 +41,8 @@ class BlogsController {
     });
     const resDoc = responseHandler(201, "blog  created successfully", blog);
     res.status(201).json(resDoc);
+
+    revalidateFrontend({ tags: ["blogs"] });
   });
 
   updateBlog = catchError(async (req, res, next) => {
@@ -93,6 +96,10 @@ class BlogsController {
     // Send response
     const resDoc = responseHandler(200, "blog updated successfully", blog);
     res.status(200).json(resDoc);
+
+    revalidateFrontend({
+      tags: ["blogs", `blog-${id}`],
+    });
   });
 
   getBlog = catchError(async (req, res, next) => {
@@ -119,9 +126,14 @@ class BlogsController {
   });
 
   deleteBlog = catchError(async (req, res, next) => {
-    await blogService.deleteBlog(req.params.id);
+    const { id } = req.params;
+    await blogService.deleteBlog(id);
     const resDoc = responseHandler(200, "blog deleted successfully");
     res.status(200).json(resDoc);
+
+    revalidateFrontend({
+      tags: ["blogs", `blog-${id}`],
+    });
   });
 }
 

@@ -6,6 +6,8 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
+import { revalidateFrontend } from "../../utils/revalidateFrontend.mjs";
+import { buildCatalogTags } from "../../utils/revalidateTags.mjs";
 
 const cleanupUploadedFiles = (files) => {
   if (Array.isArray(files)) {
@@ -128,6 +130,26 @@ class AssetController {
       asset,
     );
     res.status(200).json(resDoc);
+
+    const assetId = req.params.id;
+    const subCatId = asset?.sub_category_id || asset?.sub_category?.id;
+    let catId = asset?.sub_category?.category_id;
+    if (!catId && subCatId) {
+      const sub = await prisma.subCategory
+        .findUnique({
+          where: { id: parseInt(subCatId) },
+          select: { category_id: true },
+        })
+        .catch(() => null);
+      catId = sub?.category_id;
+    }
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds: assetId,
+        subCategoryIds: subCatId,
+        categoryIds: catId,
+      }),
+    });
   });
 
   createAsset = catchError(async (req, res, next) => {
@@ -190,6 +212,28 @@ class AssetController {
     });
     const resDoc = responseHandler(201, "Asset created successfully", asset);
     res.status(201).json(resDoc);
+
+    const subCatId =
+      asset?.sub_category_id ||
+      asset?.sub_category?.id ||
+      req.body?.sub_category_id;
+    let catId = asset?.sub_category?.category_id;
+    if (!catId && subCatId) {
+      const sub = await prisma.subCategory
+        .findUnique({
+          where: { id: parseInt(subCatId) },
+          select: { category_id: true },
+        })
+        .catch(() => null);
+      catId = sub?.category_id;
+    }
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds: asset?.id,
+        subCategoryIds: subCatId,
+        categoryIds: catId,
+      }),
+    });
   });
 
   updateAsset = catchError(async (req, res, next) => {
@@ -208,6 +252,11 @@ class AssetController {
     const parsedAssetId = parseInt(id);
     const existingAsset = await prisma.asset.findUnique({
       where: { id: parsedAssetId },
+      include: {
+        sub_category: {
+          select: { id: true, category_id: true },
+        },
+      },
     });
     if (!existingAsset) {
       cleanupUploadedFiles(req.files);
@@ -317,6 +366,19 @@ class AssetController {
     });
     const resDoc = responseHandler(200, "Asset updated successfully", asset);
     res.status(200).json(resDoc);
+
+    const oldSubCatId = existingAsset?.sub_category_id;
+    const oldCatId = existingAsset?.sub_category?.category_id;
+    const newSubCatId = asset?.sub_category_id || asset?.sub_category?.id;
+    const newCatId = asset?.sub_category?.category_id;
+
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds: id,
+        subCategoryIds: [oldSubCatId, newSubCatId],
+        categoryIds: [oldCatId, newCatId],
+      }),
+    });
   });
 
   updateAssetAccessType = catchError(async (req, res, next) => {
@@ -346,6 +408,25 @@ class AssetController {
       asset,
     );
     res.status(200).json(resDoc);
+
+    const subCatId = asset?.sub_category_id || asset?.sub_category?.id;
+    let catId = asset?.sub_category?.category_id;
+    if (!catId && subCatId) {
+      const sub = await prisma.subCategory
+        .findUnique({
+          where: { id: parseInt(subCatId) },
+          select: { category_id: true },
+        })
+        .catch(() => null);
+      catId = sub?.category_id;
+    }
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds: id,
+        subCategoryIds: subCatId,
+        categoryIds: catId,
+      }),
+    });
   });
 
   bulkUpdateAssetAccessType = catchError(async (req, res, next) => {
@@ -367,16 +448,32 @@ class AssetController {
       });
     }
 
-    const result = await assetService.bulkUpdateAssetAccessType(
-      ids,
-      access_type,
-    );
+    const { affectedAssets, ...responseResult } =
+      await assetService.bulkUpdateAssetAccessType(ids, access_type);
     const resDoc = responseHandler(
       200,
-      `Updated ${result.count} assets to ${access_type}`,
-      result,
+      `Updated ${responseResult.count} assets to ${access_type}`,
+      responseResult,
     );
     res.status(200).json(resDoc);
+
+    const assetIds = [];
+    const subCategoryIds = [];
+    const categoryIds = [];
+    for (const a of affectedAssets || []) {
+      if (a.id) assetIds.push(a.id);
+      if (a.sub_category_id) subCategoryIds.push(a.sub_category_id);
+      const catId = a.sub_category?.category_id;
+      if (catId) categoryIds.push(catId);
+    }
+
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds,
+        subCategoryIds,
+        categoryIds,
+      }),
+    });
   });
 
   getAssets = catchError(async (req, res, next) => {
@@ -444,9 +541,33 @@ class AssetController {
       });
     }
 
+    const existing = await prisma.asset
+      .findUnique({
+        where: { id: parseInt(id) },
+        select: {
+          id: true,
+          sub_category_id: true,
+          sub_category: {
+            select: { id: true, category_id: true },
+          },
+        },
+      })
+      .catch(() => null);
+
     await assetService.deleteAsset(id);
     const resDoc = responseHandler(200, "Asset deleted successfully");
     res.status(200).json(resDoc);
+
+    const subCatId = existing?.sub_category_id || existing?.sub_category?.id;
+    const catId = existing?.sub_category?.category_id;
+
+    revalidateFrontend({
+      tags: buildCatalogTags({
+        assetIds: id,
+        subCategoryIds: subCatId,
+        categoryIds: catId,
+      }),
+    });
   });
 
   /**

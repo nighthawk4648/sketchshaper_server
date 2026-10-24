@@ -1,5 +1,6 @@
 import catchError from '../../middlewares/errors/catchError.mjs';
 import responseHandler from '../../utils/responseHandler.mjs';
+import { revalidateFrontend } from '../../utils/revalidateFrontend.mjs';
 import pageService from './page.service.mjs';
 
 class PageController {
@@ -8,6 +9,7 @@ class PageController {
 			...req.body,
 			files: req.files,
 		});
+		revalidateFrontend({ tags: ["pages"] });
 		const resDoc = responseHandler(201, 'Page created successfully', page);
 		res.status(201).json(resDoc);
 	});
@@ -17,6 +19,7 @@ class PageController {
 			...req.body,
 			files: req.files,
 		});
+		revalidateFrontend({ tags: ["pages", `page-${req.params.id}`] });
 		const resDoc = responseHandler(200, 'Page updated successfully', page);
 		res.status(200).json(resDoc);
 	});
@@ -46,6 +49,7 @@ class PageController {
 
 	deletePage = catchError(async (req, res, next) => {
 		await pageService.deletePage(req.params.id);
+		revalidateFrontend({ tags: ["pages", `page-${req.params.id}`] });
 		const resDoc = responseHandler(200, 'Page deleted successfully');
 		res.status(200).json(resDoc);
 	});

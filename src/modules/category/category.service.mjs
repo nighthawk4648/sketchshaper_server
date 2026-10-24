@@ -51,7 +51,7 @@ class CategoryService {
         },
       },
       orderBy: {
-        id: "desc",
+        id: "asc",
       },
     });
     return categorys;

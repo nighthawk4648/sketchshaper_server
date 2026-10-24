@@ -1,5 +1,6 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
+import { revalidateFrontend } from "../../utils/revalidateFrontend.mjs";
 import sliderService from "./slider.service.mjs";
 
 class SliderController {
@@ -11,6 +12,7 @@ class SliderController {
       short_description,
       files: req.files,
     });
+    revalidateFrontend({ tags: ["sliders"], paths: ["/"] });
     const resDoc = responseHandler(201, "Slider created successfully", slider);
     res.status(201).json(resDoc);
   });
@@ -20,6 +22,7 @@ class SliderController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend({ tags: ["sliders"], paths: ["/"] });
     const resDoc = responseHandler(200, "Slider updated successfully", slider);
     res.status(200).json(resDoc);
   });
@@ -45,6 +48,7 @@ class SliderController {
 
   deleteSlider = catchError(async (req, res, next) => {
     await sliderService.deleteSlider(req.params.id);
+    revalidateFrontend({ tags: ["sliders"], paths: ["/"] });
     const resDoc = responseHandler(200, "Slider deleted successfully");
     res.status(200).json(resDoc);
   });

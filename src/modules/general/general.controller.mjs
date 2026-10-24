@@ -1,5 +1,6 @@
 import catchError from '../../middlewares/errors/catchError.mjs';
 import responseHandler from '../../utils/responseHandler.mjs';
+import { revalidateFrontend } from '../../utils/revalidateFrontend.mjs';
 import adminService from './general.service.mjs';
 
 class GeneralController {
@@ -13,6 +14,8 @@ class GeneralController {
 			aboutUs
 		);
 		res.status(200).json(resDoc);
+
+		revalidateFrontend({ tags: ["general"], paths: ["/", "/about-us"] });
 	});
 
 	getAboutUs = catchError(async (req, res, next) => {
@@ -33,6 +36,8 @@ class GeneralController {
 			settings
 		);
 		res.status(200).json(resDoc);
+
+		revalidateFrontend({ tags: ["general"], paths: ["/"] });
 	});
 
 	getApplicationSettings = catchError(async (req, res, next) => {

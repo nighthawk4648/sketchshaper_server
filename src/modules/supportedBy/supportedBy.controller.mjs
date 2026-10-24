@@ -1,5 +1,6 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
+import { revalidateFrontend } from "../../utils/revalidateFrontend.mjs";
 import supportedByService from "./supportedBy.service.mjs";
 
 class SupportedByController {
@@ -15,6 +16,7 @@ class SupportedByController {
       files, 
     });
 
+    revalidateFrontend({ tags: ["supportedby"], paths: ["/"] });
     const resDoc = responseHandler(201, "supportedBy created successfully", supportedBy);
     res.status(201).json(resDoc);
   });
@@ -25,6 +27,7 @@ class SupportedByController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend({ tags: ["supportedby"], paths: ["/"] });
     const resDoc = responseHandler(200, "supportedBy updated successfully", supportedBy);
     res.status(200).json(resDoc);
   });
@@ -50,6 +53,7 @@ class SupportedByController {
 
   deleteSupportedBy = catchError(async (req, res, next) => {
     await supportedByService.deleteSupportedBy(req.params.id);
+    revalidateFrontend({ tags: ["supportedby"], paths: ["/"] });
     const resDoc = responseHandler(200, "supportedBy deleted successfully");
     res.status(200).json(resDoc);
   });

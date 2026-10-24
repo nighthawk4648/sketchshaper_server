@@ -751,6 +751,22 @@ class AssetService {
 
   async bulkUpdateAssetAccessType(ids, access_type) {
     const numericIds = ids.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+    const affectedAssets = await prisma.asset
+      .findMany({
+        where: { id: { in: numericIds } },
+        select: {
+          id: true,
+          sub_category_id: true,
+          sub_category: {
+            select: { id: true, category_id: true },
+          },
+        },
+      })
+      .catch((err) => {
+        console.error("Failed to query affected assets in bulkUpdateAssetAccessType:", err);
+        return [];
+      });
+
     const result = await prisma.asset.updateMany({
       where: {
         id: { in: numericIds },
@@ -759,7 +775,7 @@ class AssetService {
         access_type,
       },
     });
-    return result;
+    return { ...result, affectedAssets };
   }
 
   async getAsset(id) {

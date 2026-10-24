@@ -1,6 +1,7 @@
 import catchError from '../../middlewares/errors/catchError.mjs';
 import responseHandler from '../../utils/responseHandler.mjs';
 import extensionDownloadService from './extension-download.service.mjs';
+import { revalidateFrontend } from '../../utils/revalidateFrontend.mjs';
 
 class ExtensionDownloadController {
 	incrementDownloadCount = catchError(async (req, res, next) => {
@@ -57,6 +58,8 @@ class ExtensionDownloadController {
 		const result = await extensionDownloadService.resetDownloadCount(extensionName);
 		const resDoc = responseHandler(200, 'Download count reset successfully', result);
 		res.status(200).json(resDoc);
+
+		revalidateFrontend({ tags: ["extension-downloads"] });
 	});
 
 	deleteExtension = catchError(async (req, res, next) => {
@@ -70,6 +73,8 @@ class ExtensionDownloadController {
 		await extensionDownloadService.deleteExtension(extensionName);
 		const resDoc = responseHandler(200, 'Extension deleted successfully');
 		res.status(200).json(resDoc);
+
+		revalidateFrontend({ tags: ["extension-downloads"] });
 	});
 }
 

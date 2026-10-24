@@ -1,5 +1,6 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
+import { revalidateFrontend } from "../../utils/revalidateFrontend.mjs";
 import innovativeFurnituresService from "./innovative.furnitures.service.mjs";
 
 class InnovativeFurnituresController {
@@ -18,6 +19,7 @@ class InnovativeFurnituresController {
       urlFour,
       files, 
     });
+    revalidateFrontend({ tags: ["innovative"], paths: ["/"] });
     const resDoc = responseHandler(201, "Innovative Furniture created successfully", innovativeFurnitures);
     res.status(201).json(resDoc);
   });
@@ -38,6 +40,7 @@ class InnovativeFurnituresController {
       files, 
     });
 
+    revalidateFrontend({ tags: ["innovative"], paths: ["/"] });
     // Send response
     const resDoc = responseHandler(200, "Innovative Furniture updated successfully", updatedInnovativeFurniture);
     res.status(200).json(resDoc);
@@ -64,6 +67,7 @@ class InnovativeFurnituresController {
 
   deleteInnovative = catchError(async (req, res, next) => {
     await innovativeFurnituresService.deleteInnovative(req.params.id);
+    revalidateFrontend({ tags: ["innovative"], paths: ["/"] });
     const resDoc = responseHandler(200, "Innovative deleted successfully");
     res.status(200).json(resDoc);
   });
