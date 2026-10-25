@@ -49,6 +49,14 @@ class CategoryController {
         message: 'Category ID is required'
       });
     }
+
+    if (!/^\d+$/.test(id)) {
+      return res.status(404).json({
+        status: 'error',
+        code: 404,
+        message: 'Category not found'
+      });
+    }
     
     const category = await categoryService.getCategory(id);
     

@@ -40,7 +40,24 @@ class SubCategoryController {
 
 
   getSubCategory = catchError(async (req, res, next) => {
-    const category = await subcategoryService.getSubCategory(req.params.id);
+    const { id } = req.params;
+    if (!id || !/^\d+$/.test(id)) {
+      return res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "SubCategory not found",
+      });
+    }
+
+    const category = await subcategoryService.getSubCategory(id);
+    if (!category) {
+      return res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "SubCategory not found",
+      });
+    }
+
     const resDoc = responseHandler(200, "SubCategory retrieved successfully", category);
     res.status(200).json(resDoc);
   });

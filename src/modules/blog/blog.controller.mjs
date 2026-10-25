@@ -117,7 +117,24 @@ class BlogsController {
   });
 
   getBlogById = catchError(async (req, res, next) => {
-    const blog = await blogService.getBlogById(req.params.id);
+    const { id } = req.params;
+    if (!id || !/^\d+$/.test(id)) {
+      return res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "Blog not found",
+      });
+    }
+
+    const blog = await blogService.getBlogById(id);
+    if (!blog) {
+      return res.status(404).json({
+        status: "error",
+        code: 404,
+        message: "Blog not found",
+      });
+    }
+
     const resDoc = responseHandler(200, "blog retrieved successfully", blog);
     res.status(200).json(resDoc);
   });

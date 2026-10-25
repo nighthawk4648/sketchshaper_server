@@ -39,7 +39,24 @@ class PageController {
 	});
 
 	getPage = catchError(async (req, res, next) => {
-		const page = await pageService.getPage(req.params.id);
+		const { id } = req.params;
+		if (!id || !/^\d+$/.test(id)) {
+			return res.status(404).json({
+				status: 'error',
+				code: 404,
+				message: 'Page not found',
+			});
+		}
+
+		const page = await pageService.getPage(id);
+		if (!page) {
+			return res.status(404).json({
+				status: 'error',
+				code: 404,
+				message: 'Page not found',
+			});
+		}
+
 		const resDoc = responseHandler(200, 'Page retrieved successfully', page);
 		res.status(200).json(resDoc);
 	});
