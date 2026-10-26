@@ -6,6 +6,7 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
+import { revalidateFrontend } from "../../utils/revalidate.mjs";
 
 const cleanupUploadedFiles = (files) => {
   if (Array.isArray(files)) {
@@ -188,6 +189,7 @@ class AssetController {
         : null,
       files: req.files,
     });
+    revalidateFrontend(["assets", "general"]);
     const resDoc = responseHandler(201, "Asset created successfully", asset);
     res.status(201).json(resDoc);
   });
@@ -315,6 +317,7 @@ class AssetController {
       removedImageIds,
       files: req.files,
     });
+    revalidateFrontend(["assets", `asset-${id}`, "general"]);
     const resDoc = responseHandler(200, "Asset updated successfully", asset);
     res.status(200).json(resDoc);
   });
@@ -340,6 +343,7 @@ class AssetController {
     }
 
     const asset = await assetService.updateAssetAccessType(id, access_type);
+    revalidateFrontend(["assets", `asset-${id}`, "general"]);
     const resDoc = responseHandler(
       200,
       `Asset marked as ${access_type} successfully`,
@@ -445,6 +449,7 @@ class AssetController {
     }
 
     await assetService.deleteAsset(id);
+    revalidateFrontend(["assets", `asset-${id}`, "general"]);
     const resDoc = responseHandler(200, "Asset deleted successfully");
     res.status(200).json(resDoc);
   });
