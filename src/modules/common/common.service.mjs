@@ -18,6 +18,9 @@ class CommonService {
           { short_description: { contains: searchTerm } },
         ],
       },
+      include: {
+        category: true,
+      },
     });
 
     const assetPromise = prisma.asset.findMany({
@@ -25,6 +28,11 @@ class CommonService {
         OR: [
           { name: { contains: searchTerm } },
           { short_description: { contains: searchTerm } },
+          {
+            sub_category: {
+              name: { contains: searchTerm },
+            },
+          },
         ],
       },
       include: {
