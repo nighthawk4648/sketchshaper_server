@@ -9,7 +9,7 @@
 		"dev": "node --watch src/server.mjs",
 		"build": "echo '✅ No build step needed for backend — use pm2 restart api to deploy changes'",
 		"build:prisma": "prisma migrate dev --name init",
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"test": "node --test src/middlewares/uploads/upload.test.mjs"
 	},
 	"author": "",
 	"license": "ISC",
