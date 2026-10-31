@@ -10,33 +10,37 @@ class GeneralService {
 			});
 		}
 
-		// const aboutUs = await AboutUs.findOneAndUpdate(
-		// 	{
-		// 		slug: 'about-us',
-		// 	},
-		// 	{
-		// 		$set: { ...payload, ...images },
-		// 	},
-		// 	{ new: true, upsert: true }
-		// );
-
 		delete payload.files;
 		delete payload.slug;
+
+		const existingAboutUs = await prisma.aboutUs.findUnique({
+			where: {
+				slug: 'about-us'
+			}
+		});
+
+		const coverValue = images.cover || payload.cover || existingAboutUs?.cover || "";
+
+		const updateData = {};
+		if (payload.title !== undefined) updateData.title = payload.title;
+		if (payload.short_description !== undefined) updateData.short_description = payload.short_description;
+		if (payload.content !== undefined) updateData.content = payload.content;
+		if (coverValue) updateData.cover = coverValue;
+
+		const createData = {
+			title: payload.title || existingAboutUs?.title || "ABOUT US",
+			short_description: payload.short_description || existingAboutUs?.short_description || "",
+			content: payload.content || existingAboutUs?.content || "",
+			cover: coverValue,
+			slug: 'about-us',
+		};
 
 		const aboutUs = await prisma.aboutUs.upsert({
 			where: {
 				slug: 'about-us'
 			},
-			update: {
-				...payload,
-				...images
-			},
-			create: {
-				...payload,
-				...images,
-				slug: 'about-us'
-			}
-
+			update: updateData,
+			create: createData
 		});
 
 		return aboutUs;
