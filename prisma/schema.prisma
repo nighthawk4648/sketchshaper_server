@@ -35,6 +35,7 @@ model ContactMessage {
 
 model Category {
   id                Int           @id @default(autoincrement())
+  slug              String?       @unique
   name              String
   short_description String        @db.LongText
   image             String?
@@ -48,6 +49,7 @@ model Category {
 
 model SubCategory {
   id                Int      @id @default(autoincrement())
+  slug              String?
   name              String
   short_description String   @db.LongText
   image             String?
@@ -63,6 +65,7 @@ model SubCategory {
 
 model Asset {
   id                Int          @id @default(autoincrement())
+  slug              String?
   name              String
   cover             String
   cover_alt         String?      @db.Text
@@ -206,6 +209,7 @@ model SupportedBy {
 
 model Blog {
   id                Int      @id @default(autoincrement())
+  slug              String?  @unique
   title             String
   name              String
   short_description String   @db.LongText

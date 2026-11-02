@@ -1,8 +1,12 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { sanitizeSlug } from "../../utils/slugHelper.mjs";
 
 class CategoryService {
   async createCategory(payload) {
+    const slug = sanitizeSlug(payload.slug, payload.name);
+    delete payload.slug;
+
     const images = {};
     if (isArrayElementExist(payload.files)) {
       payload.files.forEach((file) => {
@@ -14,12 +18,16 @@ class CategoryService {
 
     // create the category
     const category = await prisma.category.create({
-      data: { ...payload, ...images },
+      data: { ...payload, slug, ...images },
     });
     return category;
   }
 
   async updateCategory(id, payload) {
+    if (payload.slug !== undefined) {
+      payload.slug = sanitizeSlug(payload.slug, payload.name);
+    }
+
     const images = {};
     if (isArrayElementExist(payload.files)) {
       payload.files.forEach((file) => {

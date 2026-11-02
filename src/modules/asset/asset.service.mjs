@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
 import chunkUploadHelper from "../../utils/chunkUploadHelper.mjs";
+import { sanitizeSlug } from "../../utils/slugHelper.mjs";
 import fs from "fs";
 import path from "path";
 
@@ -394,6 +395,8 @@ class AssetService {
     }
 
     const coverAlt = payload.cover_alt || null;
+    const slug = sanitizeSlug(payload.slug, payload.name);
+    delete payload.slug;
     delete payload.files;
     delete payload.newImageAlts;
     delete payload.existingImageAlts;
@@ -403,6 +406,7 @@ class AssetService {
     const asset = await prisma.asset.create({
       data: {
         name: payload.name,
+        slug,
         cover: cover.cover || payload.cover || "",
         cover_alt: coverAlt,
         resolution: payload.resolution || "",
@@ -524,6 +528,10 @@ class AssetService {
       },
       data: {
         name: payload.name !== undefined ? payload.name : undefined,
+        slug:
+          payload.slug !== undefined
+            ? sanitizeSlug(payload.slug, payload.name || payload.fallbackName)
+            : undefined,
         resolution:
           payload.resolution !== undefined ? payload.resolution : undefined,
         ...(payload.size &&
@@ -691,6 +699,8 @@ class AssetService {
     order = "desc",
     search = "",
     access_type = "",
+    sub_category_id = "",
+    sort_by = "id",
   }) {
     const where = {};
 
@@ -704,18 +714,51 @@ class AssetService {
       where.access_type = access_type.trim();
     }
 
+    if (
+      sub_category_id &&
+      sub_category_id !== "all" &&
+      String(sub_category_id).trim() !== ""
+    ) {
+      const parsedSubCategoryId = parseInt(sub_category_id, 10);
+      if (!isNaN(parsedSubCategoryId)) {
+        where.sub_category_id = parsedSubCategoryId;
+      }
+    }
+
+    let orderBy = {
+      id: order === "asc" ? "asc" : "desc",
+    };
+
+    if (sort_by === "sub_category" || sort_by === "sub_category_name") {
+      orderBy = {
+        sub_category: {
+          name: order === "asc" ? "asc" : "desc",
+        },
+      };
+    } else if (sort_by === "name") {
+      orderBy = {
+        name: order === "asc" ? "asc" : "desc",
+      };
+    } else if (sort_by === "created_at") {
+      orderBy = {
+        created_at: order === "asc" ? "asc" : "desc",
+      };
+    }
+
     const assetsPromise = prisma.asset.findMany({
       where,
       include: {
-        sub_category: true,
+        sub_category: {
+          include: {
+            category: true,
+          },
+        },
         images: true,
         file: true,
       },
       skip: (page - 1) * limit,
       take: limit,
-      orderBy: {
-        id: order === "asc" ? "asc" : "desc",
-      },
+      orderBy,
     });
 
     const countPromise = prisma.asset.count({ where });

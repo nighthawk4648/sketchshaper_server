@@ -1,9 +1,18 @@
 import { prisma } from '../../db/prisma.mjs';
 import isArrayElementExist from '../../utils/isArrayElementExist.mjs';
+import { sanitizeSlug } from '../../utils/slugHelper.mjs';
 
 class PageService {
 	async createPage(payload) {
-		const slug = payload.title.toLowerCase().split(' ').join('-');
+		const slug = sanitizeSlug(payload.slug, payload.title);
+		if (!slug) {
+			const err = new Error('A valid URL slug with at least one letter or number is required.');
+			err.status = 400;
+			throw err;
+		}
+
+		delete payload.slug;
+
 		const images = {};
 		if (isArrayElementExist(payload.files)) {
 			payload.files.forEach((file) => {
@@ -26,6 +35,20 @@ class PageService {
 	}
 
 	async updatePage(id, payload) {
+		if (payload.slug !== undefined) {
+			const slug = sanitizeSlug(payload.slug, payload.title);
+			if (!slug && payload.slug) {
+				const err = new Error('A valid URL slug with at least one letter or number is required.');
+				err.status = 400;
+				throw err;
+			}
+			if (slug) {
+				payload.slug = slug;
+			} else {
+				delete payload.slug;
+			}
+		}
+
 		const images = {};
 		if (isArrayElementExist(payload.files)) {
 			payload.files.forEach((file) => {
