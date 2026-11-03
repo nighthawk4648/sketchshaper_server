@@ -1,31 +1,25 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { sanitizeSlug } from "../../utils/slugHelper.mjs";
 
 class SubCategoryService {
   async createSubCategory(payload) {
+    const slug = sanitizeSlug(payload.slug, payload.name);
+    delete payload.slug;
+
     const images = {};
     if (isArrayElementExist(payload.files)) {
       payload.files.forEach((file) => {
         images[file.fieldname] = file.filename;
       });
     }
-    // const category = await Category.findById(payload.category);
-
-    // if (!category) {
-    //   throw new Error("Category not found");
-    // }
-
-    // // create the subCategory
-    // const subCategory = new SubCategory({
-    //   ...payload,
-    //   ...images,
-    // });
 
     delete payload.files;
 
     const subCategory = await prisma.subCategory.create({
       data: {
         ...payload,
+        slug,
         category_id: parseInt(payload.category_id),
         ...images,
       },
@@ -35,6 +29,10 @@ class SubCategoryService {
   }
 
   async updateSubCategory(id, payload) {
+    if (payload.slug !== undefined) {
+      payload.slug = sanitizeSlug(payload.slug, payload.name);
+    }
+
     const images = {};
     if (isArrayElementExist(payload.files)) {
       payload.files.forEach((file) => {

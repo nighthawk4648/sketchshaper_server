@@ -14,8 +14,11 @@ export async function revalidateFrontend(tags = [], paths = []) {
 
   const secret = process.env.REVALIDATION_SECRET;
 
-  // If secret is not set yet, skip gracefully without crashing
+  // If secret is not set yet, log warning and skip gracefully without crashing
   if (!secret) {
+    console.warn(
+      "[Revalidate Warning] REVALIDATION_SECRET is not configured; skipping frontend cache revalidation."
+    );
     return;
   }
 

@@ -20,7 +20,13 @@ class CategoryController {
       ...req.body,
       files: req.files,
     });
-    revalidateFrontend(["categories", `category-${req.params.id}`, "general"]);
+    revalidateFrontend([
+      "categories",
+      `category-${req.params.id}`,
+      "sub-categories",
+      "assets",
+      "general",
+    ]);
     const resDoc = responseHandler(200, "Category updated successfully", category);
     res.status(200).json(resDoc);
   });
@@ -74,7 +80,13 @@ class CategoryController {
 
   deleteCategory = catchError(async (req, res, next) => {
     await categoryService.deleteCategory(req.params.id);
-    revalidateFrontend(["categories", `category-${req.params.id}`, "general"]);
+    revalidateFrontend([
+      "categories",
+      `category-${req.params.id}`,
+      "sub-categories",
+      "assets",
+      "general",
+    ]);
     const resDoc = responseHandler(200, "Category deleted successfully");
     res.status(200).json(resDoc);
   });

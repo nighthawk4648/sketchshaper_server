@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { sanitizeSlug } from "../../utils/slugHelper.mjs";
 
 class BlogService {
   async createBlog(payload) {
@@ -24,9 +25,12 @@ class BlogService {
       keywords,
     } = payload;
 
+    const slug = sanitizeSlug(payload.slug, title);
+
     const blog = await prisma.blog.create({
       data: {
         title,
+        slug,
         short_description,
         paragraph_one,
         paragraph_two,
@@ -81,6 +85,9 @@ class BlogService {
         paragraph_two,
         paragraph_three,
         back_link,
+        ...(payload.slug !== undefined && {
+          slug: sanitizeSlug(payload.slug, title),
+        }),
         ...(meta_title !== undefined && { meta_title }),
         ...(meta_description !== undefined && { meta_description }),
         ...(keywords !== undefined && { keywords }),

@@ -142,6 +142,17 @@ class AssetController {
       });
     }
 
+    // Validate Asset Slug format (cannot be purely digits)
+    if (req.body.slug && /^\d+$/.test(req.body.slug.trim())) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message:
+          "Asset slug cannot be purely numbers. Please include letters or words.",
+      });
+    }
+
     // 2. Validate Sub-Category ID
     const subCategoryId = parseInt(req.body.sub_category_id);
     if (
@@ -189,7 +200,16 @@ class AssetController {
         : null,
       files: req.files,
     });
-    revalidateFrontend(["assets", "general"]);
+    const parentCatId = subCategory.category_id;
+    revalidateFrontend([
+      "assets",
+      `asset-${asset.id}`,
+      "categories",
+      parentCatId ? `category-${parentCatId}` : null,
+      "sub-categories",
+      `subcategory-${subCategoryId}`,
+      "general",
+    ]);
     const resDoc = responseHandler(201, "Asset created successfully", asset);
     res.status(201).json(resDoc);
   });
@@ -210,6 +230,11 @@ class AssetController {
     const parsedAssetId = parseInt(id);
     const existingAsset = await prisma.asset.findUnique({
       where: { id: parsedAssetId },
+      include: {
+        sub_category: {
+          select: { id: true, category_id: true },
+        },
+      },
     });
     if (!existingAsset) {
       cleanupUploadedFiles(req.files);
@@ -222,6 +247,7 @@ class AssetController {
 
     const {
       name,
+      slug,
       resolution,
       size,
       download_link,
@@ -246,6 +272,22 @@ class AssetController {
       });
     }
 
+    if (
+      slug !== undefined &&
+      slug !== null &&
+      slug !== "" &&
+      /^\d+$/.test(String(slug).trim())
+    ) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message:
+          "Asset slug cannot be purely numbers. Please include letters or words.",
+      });
+    }
+
+    let newSubCategory = null;
     if (sub_category_id !== undefined) {
       const parsedSubId = parseInt(sub_category_id);
       if (isNaN(parsedSubId) || parsedSubId <= 0) {
@@ -256,10 +298,10 @@ class AssetController {
           message: "Valid sub-category is required",
         });
       }
-      const subCategory = await prisma.subCategory.findUnique({
+      newSubCategory = await prisma.subCategory.findUnique({
         where: { id: parsedSubId },
       });
-      if (!subCategory) {
+      if (!newSubCategory) {
         cleanupUploadedFiles(req.files);
         return res.status(400).json({
           statusCode: 400,
@@ -296,6 +338,8 @@ class AssetController {
 
     const asset = await assetService.updateAsset(id, {
       name,
+      slug,
+      fallbackName: existingAsset.name,
       resolution,
       size,
       download_link,
@@ -317,7 +361,26 @@ class AssetController {
       removedImageIds,
       files: req.files,
     });
-    revalidateFrontend(["assets", `asset-${id}`, "general"]);
+
+    const oldSubId = existingAsset.sub_category_id;
+    const oldCatId = existingAsset.sub_category?.category_id;
+    const newSubId =
+      sub_category_id !== undefined ? parseInt(sub_category_id) : oldSubId;
+    const newCatId = newSubCategory ? newSubCategory.category_id : oldCatId;
+
+    const tagsToPurge = new Set([
+      "assets",
+      `asset-${id}`,
+      "categories",
+      "sub-categories",
+      "general",
+    ]);
+    if (oldCatId) tagsToPurge.add(`category-${oldCatId}`);
+    if (oldSubId) tagsToPurge.add(`subcategory-${oldSubId}`);
+    if (newCatId) tagsToPurge.add(`category-${newCatId}`);
+    if (newSubId) tagsToPurge.add(`subcategory-${newSubId}`);
+    revalidateFrontend(Array.from(tagsToPurge));
+
     const resDoc = responseHandler(200, "Asset updated successfully", asset);
     res.status(200).json(resDoc);
   });
@@ -343,7 +406,13 @@ class AssetController {
     }
 
     const asset = await assetService.updateAssetAccessType(id, access_type);
-    revalidateFrontend(["assets", `asset-${id}`, "general"]);
+    revalidateFrontend([
+      "assets",
+      `asset-${id}`,
+      "categories",
+      "sub-categories",
+      "general",
+    ]);
     const resDoc = responseHandler(
       200,
       `Asset marked as ${access_type} successfully`,
@@ -375,6 +444,12 @@ class AssetController {
       ids,
       access_type,
     );
+    revalidateFrontend([
+      "assets",
+      "categories",
+      "sub-categories",
+      "general",
+    ]);
     const resDoc = responseHandler(
       200,
       `Updated ${result.count} assets to ${access_type}`,
@@ -394,13 +469,16 @@ class AssetController {
   });
 
   getAssetsByPagination = catchError(async (req, res, next) => {
-    const { page, limit, order, search, access_type } = req.query;
+    const { page, limit, order, search, access_type, sub_category_id, sort_by } =
+      req.query;
     const assets = await assetService.getAssetsByPagination({
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       order,
       search,
       access_type,
+      sub_category_id,
+      sort_by,
     });
     const resDoc = responseHandler(
       200,
@@ -448,8 +526,41 @@ class AssetController {
       });
     }
 
+    const parsedAssetId = parseInt(id);
+    const existingAsset = await prisma.asset.findUnique({
+      where: { id: parsedAssetId },
+      include: {
+        sub_category: {
+          select: { id: true, category_id: true },
+        },
+      },
+    });
+
+    if (!existingAsset) {
+      return res.status(404).json({
+        statusCode: 404,
+        status: "error",
+        message: "Asset not found",
+      });
+    }
+
     await assetService.deleteAsset(id);
-    revalidateFrontend(["assets", `asset-${id}`, "general"]);
+
+    const tagsToPurge = [
+      "assets",
+      `asset-${id}`,
+      "categories",
+      "sub-categories",
+      "general",
+    ];
+    if (existingAsset.sub_category_id) {
+      tagsToPurge.push(`subcategory-${existingAsset.sub_category_id}`);
+    }
+    if (existingAsset.sub_category?.category_id) {
+      tagsToPurge.push(`category-${existingAsset.sub_category.category_id}`);
+    }
+    revalidateFrontend(tagsToPurge);
+
     const resDoc = responseHandler(200, "Asset deleted successfully");
     res.status(200).json(resDoc);
   });
