@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
+import { notifyGoogleAsset } from "../../utils/googleIndexer.mjs";
 
 const cleanupUploadedFiles = (files) => {
   if (Array.isArray(files)) {
@@ -170,6 +171,7 @@ class AssetController {
 
     const subCategory = await prisma.subCategory.findUnique({
       where: { id: subCategoryId },
+      include: { category: true },
     });
     if (!subCategory) {
       cleanupUploadedFiles(req.files);
@@ -210,6 +212,13 @@ class AssetController {
       `subcategory-${subCategoryId}`,
       "general",
     ]);
+    notifyGoogleAsset(
+      {
+        ...asset,
+        sub_category: subCategory,
+      },
+      "URL_UPDATED"
+    );
     const resDoc = responseHandler(201, "Asset created successfully", asset);
     res.status(201).json(resDoc);
   });
@@ -232,7 +241,7 @@ class AssetController {
       where: { id: parsedAssetId },
       include: {
         sub_category: {
-          select: { id: true, category_id: true },
+          include: { category: true },
         },
       },
     });
@@ -300,6 +309,7 @@ class AssetController {
       }
       newSubCategory = await prisma.subCategory.findUnique({
         where: { id: parsedSubId },
+        include: { category: true },
       });
       if (!newSubCategory) {
         cleanupUploadedFiles(req.files);
@@ -380,6 +390,14 @@ class AssetController {
     if (newCatId) tagsToPurge.add(`category-${newCatId}`);
     if (newSubId) tagsToPurge.add(`subcategory-${newSubId}`);
     revalidateFrontend(Array.from(tagsToPurge));
+
+    notifyGoogleAsset(
+      {
+        ...asset,
+        sub_category: newSubCategory || existingAsset.sub_category,
+      },
+      "URL_UPDATED"
+    );
 
     const resDoc = responseHandler(200, "Asset updated successfully", asset);
     res.status(200).json(resDoc);
@@ -531,7 +549,7 @@ class AssetController {
       where: { id: parsedAssetId },
       include: {
         sub_category: {
-          select: { id: true, category_id: true },
+          include: { category: true },
         },
       },
     });
@@ -560,6 +578,8 @@ class AssetController {
       tagsToPurge.push(`category-${existingAsset.sub_category.category_id}`);
     }
     revalidateFrontend(tagsToPurge);
+
+    notifyGoogleAsset(existingAsset, "URL_DELETED");
 
     const resDoc = responseHandler(200, "Asset deleted successfully");
     res.status(200).json(resDoc);
