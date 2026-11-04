@@ -29,27 +29,88 @@ function resolveKeyFilePath() {
   return null;
 }
 
+/**
+ * Extracts Google Service Account credentials from .env or key file
+ * Supports:
+ * 1. GOOGLE_SERVICE_ACCOUNT_KEY (JSON or Base64 string in .env)
+ * 2. GOOGLE_SERVICE_ACCOUNT_EMAIL & GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (in .env)
+ * 3. File fallback (google-indexing-key.json on disk)
+ */
+function getCredentials() {
+  // 1. Check GOOGLE_SERVICE_ACCOUNT_KEY in .env (JSON or Base64)
+  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (rawKey && rawKey.trim()) {
+    try {
+      const trimmed = rawKey.trim();
+      const decoded = trimmed.startsWith("{")
+        ? trimmed
+        : Buffer.from(trimmed, "base64").toString("utf8");
+      const parsed = JSON.parse(decoded);
+      if (parsed.client_email && parsed.private_key) {
+        return {
+          email: parsed.client_email,
+          key: parsed.private_key,
+          source: "env_service_account_key",
+        };
+      }
+    } catch (e) {
+      console.warn("[Google Indexing] Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY from env:", e.message);
+    }
+  }
+
+  // 2. Check individual email and private key env vars
+  const envEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const envPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  if (envEmail && envPrivateKey) {
+    return {
+      email: envEmail,
+      key: envPrivateKey,
+      source: "env_individual_vars",
+    };
+  }
+
+  // 3. Fallback to candidate JSON file on disk
+  const keyFilePath = resolveKeyFilePath();
+  if (keyFilePath) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(keyFilePath, "utf8"));
+      if (parsed.client_email && parsed.private_key) {
+        return {
+          email: parsed.client_email,
+          key: parsed.private_key,
+          source: keyFilePath,
+        };
+      }
+    } catch (e) {
+      console.warn(`[Google Indexing] Failed to read key file ${keyFilePath}:`, e.message);
+    }
+  }
+
+  return null;
+}
+
 const authCache = new Map();
 
 /**
- * Returns GoogleAuth instance for the resolved key file
+ * Returns GoogleAuth / JWT client instance
  */
 export function getGoogleAuthClient() {
-  const keyFilePath = resolveKeyFilePath();
-  if (!keyFilePath) {
+  const creds = getCredentials();
+  if (!creds) {
     return null;
   }
 
-  if (authCache.has(keyFilePath)) {
-    return authCache.get(keyFilePath);
+  if (authCache.has(creds.source)) {
+    return authCache.get(creds.source);
   }
 
   try {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: keyFilePath,
+    const auth = new google.auth.JWT({
+      email: creds.email,
+      key: creds.key,
       scopes: ["https://www.googleapis.com/auth/indexing"],
     });
-    authCache.set(keyFilePath, auth);
+    authCache.set(creds.source, auth);
     return auth;
   } catch (err) {
     console.warn("[Google Indexing] Failed to initialize GoogleAuth:", err.message);
@@ -124,13 +185,13 @@ export async function notifyGoogleUrl(targetUrl, type = "URL_UPDATED") {
   const auth = getGoogleAuthClient();
   if (!auth) {
     console.warn(
-      `[Google Indexing] Skipped: Service account key file not found. Place 'google-indexing-key.json' in backend root to enable.`
+      `[Google Indexing] Skipped: Service account credentials not found. Configure GOOGLE_SERVICE_ACCOUNT_KEY in .env or place 'google-indexing-key.json' in backend root to enable.`
     );
     return { ok: false, skipped: true };
   }
 
   try {
-    const client = await auth.getClient();
+    const client = typeof auth.getClient === "function" ? await auth.getClient() : auth;
     const indexing = google.indexing({
       version: "v3",
       auth: client,
