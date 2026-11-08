@@ -1,14 +1,15 @@
 import { prisma } from "../../db/prisma.mjs";
+import { buildContactWhere } from "./contact.validation.mjs";
 
 class ContactService {
-  async createContactMessage({ name, email, message }) {
+  async createContactMessage(data) {
     return prisma.contactMessage.create({
-      data: { name, email, message },
+      data,
     });
   }
 
-  async getContactMessages({ page, limit, status }) {
-    const where = status ? { status } : {};
+  async getContactMessages({ page, limit, status, service_type }) {
+    const where = buildContactWhere({ status, service_type });
     const [result, total] = await Promise.all([
       prisma.contactMessage.findMany({
         where,

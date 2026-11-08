@@ -21,16 +21,26 @@ model User {
 }
 
 model ContactMessage {
-  id         Int      @id @default(autoincrement())
-  name       String   @db.VarChar(100)
-  email      String   @db.VarChar(254)
-  message    String   @db.LongText
-  status     String   @default("NEW") @db.VarChar(20)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  name            String   @db.VarChar(100)
+  email           String   @db.VarChar(254)
+  phone           String?  @db.VarChar(30)
+  service_type    String?  @db.VarChar(30)   // architecture | single-model | textures | extension | support
+  service_scope   String?  @db.VarChar(150)
+  custom_scope    String?  @db.VarChar(255)  // only when an "Other..." scope is chosen
+  reference_url   String?  @db.VarChar(2048)
+  attachment_file String?  @db.VarChar(255)  // stored random filename (never a public URL)
+  attachment_name String?  @db.VarChar(255)  // original filename, for display/download
+  attachment_mime String?  @db.VarChar(100)
+  attachment_size Int?                       // bytes
+  message         String   @db.LongText
+  status          String   @default("NEW") @db.VarChar(20)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
 
   @@index([status])
   @@index([created_at])
+  @@index([service_type])
 }
 
 model Category {
