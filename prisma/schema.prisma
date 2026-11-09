@@ -94,8 +94,40 @@ model Asset {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
+  parent_relations  AssetRelation[] @relation("ParentAssetRelations")
+  child_relations   AssetRelation[] @relation("ChildAssetRelations")
+  blog_assets       BlogAsset[]
+
   @@index([access_type])
   @@index([sub_category_id])
+}
+
+model AssetRelation {
+  id              Int      @id @default(autoincrement())
+  parent_asset_id Int
+  child_asset_id  Int
+  position        Int      @default(0)
+  parent_asset    Asset    @relation("ParentAssetRelations", fields: [parent_asset_id], references: [id], onDelete: Cascade)
+  child_asset     Asset    @relation("ChildAssetRelations", fields: [child_asset_id], references: [id], onDelete: Cascade)
+  created_at      DateTime @default(now())
+
+  @@unique([parent_asset_id, child_asset_id])
+  @@index([parent_asset_id])
+  @@index([child_asset_id])
+}
+
+model BlogAsset {
+  id         Int      @id @default(autoincrement())
+  blog_id    Int
+  asset_id   Int
+  position   Int      @default(0)
+  blog       Blog     @relation(fields: [blog_id], references: [id], onDelete: Cascade)
+  asset      Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@unique([blog_id, asset_id])
+  @@index([blog_id])
+  @@index([asset_id])
 }
 
 model AssetImage {
@@ -237,6 +269,8 @@ model Blog {
   order             Int      @default(0)
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
+
+  featured_assets   BlogAsset[]
 }
 
 model Gallery {

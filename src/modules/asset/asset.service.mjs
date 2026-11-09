@@ -2,6 +2,11 @@ import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
 import chunkUploadHelper from "../../utils/chunkUploadHelper.mjs";
 import { sanitizeSlug } from "../../utils/slugHelper.mjs";
+import {
+  LINKED_ASSET_SELECT,
+  parseLinkedIds,
+  filterExistingAssetIds,
+} from "../../utils/linkedAssets.mjs";
 import fs from "fs";
 import path from "path";
 
@@ -331,6 +336,31 @@ class AssetService {
     return { message: "Upload cancelled successfully" };
   }
 
+  /**
+   * Replace the "textures & materials used" links of a model.
+   * `rawIds` undefined / empty / malformed → links are left unchanged.
+   */
+  async syncAssetLinks(parentId, rawIds) {
+    const ids = parseLinkedIds(rawIds, parentId);
+    if (ids === undefined) return;
+
+    const validIds = await filterExistingAssetIds(ids);
+    await prisma.$transaction([
+      prisma.assetRelation.deleteMany({ where: { parent_asset_id: parentId } }),
+      ...(validIds.length
+        ? [
+            prisma.assetRelation.createMany({
+              data: validIds.map((childId, index) => ({
+                parent_asset_id: parentId,
+                child_asset_id: childId,
+                position: index,
+              })),
+            }),
+          ]
+        : []),
+    ]);
+  }
+
   async createAsset(payload) {
     const cover = {};
     const images = [];
@@ -443,6 +473,8 @@ class AssetService {
         });
       }
     }
+
+    await this.syncAssetLinks(asset.id, payload.used_asset_ids);
 
     // Return asset with file info (convert BigInt and normalize size)
     const createdAsset = await prisma.asset.findUnique({
@@ -666,6 +698,8 @@ class AssetService {
       }
     }
 
+    await this.syncAssetLinks(assetId, payload.used_asset_ids);
+
     // Return updated asset with file info
     const updatedAsset = await prisma.asset.findUnique({
       where: { id: assetId },
@@ -691,6 +725,39 @@ class AssetService {
       },
     });
     return this.normalizeAssetSize(convertBigIntToString(assets));
+  }
+
+  /**
+   * Lightweight search used by the admin "linked assets" picker.
+   * Returns only the fields a selector chip needs.
+   */
+  async searchLite({ search = "", excludeId } = {}) {
+    const where = {};
+    const term = String(search || "").trim();
+    if (term) where.name = { contains: term };
+    const excluded = parseInt(excludeId);
+    if (!isNaN(excluded)) where.id = { not: excluded };
+
+    return prisma.asset.findMany({
+      where,
+      take: 15,
+      orderBy: { id: "desc" },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        cover: true,
+        access_type: true,
+        sub_category: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            category: { select: { id: true, name: true, slug: true } },
+          },
+        },
+      },
+    });
   }
 
   async getAssetsByPagination({
@@ -819,8 +886,16 @@ class AssetService {
         },
         images: true,
         file: true,
+        parent_relations: {
+          orderBy: { position: "asc" },
+          select: { child_asset: { select: LINKED_ASSET_SELECT } },
+        },
       },
     });
+    if (asset) {
+      asset.used_assets = asset.parent_relations.map((r) => r.child_asset);
+      delete asset.parent_relations;
+    }
     return this.normalizeAssetSize(convertBigIntToString(asset));
   }
 

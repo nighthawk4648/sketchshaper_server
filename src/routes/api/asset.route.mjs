@@ -18,6 +18,9 @@ assetRouter.post("/complete", assetController.completeUpload);
 // Get assets with pagination (must come before /:id route)
 assetRouter.get("/pages", assetController.getAssetsByPagination);
 
+// Lightweight search for the admin linked-assets picker (must come before /:id)
+assetRouter.get("/search-lite", assetController.searchLite);
+
 // Get upload status and cancel upload
 assetRouter.get("/status/:uploadSessionId", assetController.getUploadStatus);
 assetRouter.delete("/cancel/:uploadSessionId", assetController.cancelUpload);

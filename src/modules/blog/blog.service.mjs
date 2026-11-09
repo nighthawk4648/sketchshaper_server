@@ -1,8 +1,38 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
 import { sanitizeSlug } from "../../utils/slugHelper.mjs";
+import {
+  LINKED_ASSET_SELECT,
+  parseLinkedIds,
+  filterExistingAssetIds,
+} from "../../utils/linkedAssets.mjs";
 
 class BlogService {
+  /**
+   * Replace the "featured models & textures" links of a blog.
+   * `rawIds` undefined / empty / malformed → links are left unchanged.
+   */
+  async syncBlogLinks(blogId, rawIds) {
+    const ids = parseLinkedIds(rawIds);
+    if (ids === undefined) return;
+
+    const validIds = await filterExistingAssetIds(ids);
+    await prisma.$transaction([
+      prisma.blogAsset.deleteMany({ where: { blog_id: blogId } }),
+      ...(validIds.length
+        ? [
+            prisma.blogAsset.createMany({
+              data: validIds.map((assetId, index) => ({
+                blog_id: blogId,
+                asset_id: assetId,
+                position: index,
+              })),
+            }),
+          ]
+        : []),
+    ]);
+  }
+
   async createBlog(payload) {
     const images = {};
     if (isArrayElementExist(payload.files)) {
@@ -46,6 +76,8 @@ class BlogService {
         bg_image_alt: payload.bg_image_alt || null,
       },
     });
+
+    await this.syncBlogLinks(blog.id, payload.featured_asset_ids);
 
     return blog;
   }
@@ -102,6 +134,8 @@ class BlogService {
       },
     });
 
+    await this.syncBlogLinks(blog.id, payload.featured_asset_ids);
+
     return blog;
   }
 
@@ -148,7 +182,16 @@ class BlogService {
       where: {
         id: parseInt(id),
       },
+      include: {
+        featured_assets: {
+          orderBy: { position: "asc" },
+          select: { asset: { select: LINKED_ASSET_SELECT } },
+        },
+      },
     });
+    if (blog) {
+      blog.featured_assets = blog.featured_assets.map((r) => r.asset);
+    }
     return blog;
   }
 

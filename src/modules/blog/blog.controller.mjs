@@ -18,6 +18,7 @@ class BlogsController {
       meta_title,
       meta_description,
       keywords,
+      featured_asset_ids,
     } = req.body;
 
     const files = req.files;
@@ -37,6 +38,7 @@ class BlogsController {
       meta_title: meta_title?.trim() || null,
       meta_description: meta_description?.trim() || null,
       keywords: keywords?.trim() || null,
+      featured_asset_ids,
       files,
     });
     revalidateFrontend(["blogs"]);
@@ -59,6 +61,7 @@ class BlogsController {
       meta_title,
       meta_description,
       keywords,
+      featured_asset_ids,
     } = req.body;
     const files = req.files;
 
@@ -89,6 +92,7 @@ class BlogsController {
           ? meta_description?.trim() || null
           : undefined,
       keywords: keywords !== undefined ? keywords?.trim() || null : undefined,
+      featured_asset_ids,
       files,
     });
 

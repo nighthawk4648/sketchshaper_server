@@ -8,6 +8,7 @@ import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
 import { notifyGoogleAsset } from "../../utils/googleIndexer.mjs";
+import { getLinkedParentTags } from "../../utils/linkedAssets.mjs";
 
 const cleanupUploadedFiles = (files) => {
   if (Array.isArray(files)) {
@@ -124,6 +125,11 @@ class AssetController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend([
+      "assets",
+      `asset-${req.params.id}`,
+      ...(await getLinkedParentTags(req.params.id)),
+    ]);
     const resDoc = responseHandler(
       200,
       "Preview image updated successfully",
@@ -270,6 +276,7 @@ class AssetController {
       cover_alt,
       newImageAlts,
       existingImageAlts,
+      used_asset_ids,
     } = req.body;
 
     if (name !== undefined && (!name || !name.trim())) {
@@ -369,6 +376,7 @@ class AssetController {
       newImageAlts,
       existingImageAlts,
       removedImageIds,
+      used_asset_ids,
       files: req.files,
     });
 
@@ -389,6 +397,8 @@ class AssetController {
     if (oldSubId) tagsToPurge.add(`subcategory-${oldSubId}`);
     if (newCatId) tagsToPurge.add(`category-${newCatId}`);
     if (newSubId) tagsToPurge.add(`subcategory-${newSubId}`);
+    // Also purge models and blogs that embed this asset as a linked card
+    (await getLinkedParentTags(id)).forEach((t) => tagsToPurge.add(t));
     revalidateFrontend(Array.from(tagsToPurge));
 
     notifyGoogleAsset(
@@ -430,6 +440,7 @@ class AssetController {
       "categories",
       "sub-categories",
       "general",
+      ...(await getLinkedParentTags(id)),
     ]);
     const resDoc = responseHandler(
       200,
@@ -467,6 +478,7 @@ class AssetController {
       "categories",
       "sub-categories",
       "general",
+      ...(await getLinkedParentTags(ids)),
     ]);
     const resDoc = responseHandler(
       200,
@@ -483,6 +495,12 @@ class AssetController {
       "Assets retrieved successfully",
       assets,
     );
+    res.status(200).json(resDoc);
+  });
+
+  searchLite = catchError(async (req, res, next) => {
+    const assets = await assetService.searchLite(req.query);
+    const resDoc = responseHandler(200, "Assets retrieved successfully", assets);
     res.status(200).json(resDoc);
   });
 
@@ -562,9 +580,13 @@ class AssetController {
       });
     }
 
+    // Must run BEFORE the delete: the cascade removes the link rows
+    const linkedTags = await getLinkedParentTags(parsedAssetId);
+
     await assetService.deleteAsset(id);
 
     const tagsToPurge = [
+      ...linkedTags,
       "assets",
       `asset-${id}`,
       "categories",
