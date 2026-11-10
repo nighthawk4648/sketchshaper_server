@@ -65,6 +65,34 @@ class CategoryService {
     return categorys;
   }
 
+  // Slim tree for the website nav/footer/sidebar: asset counts only, no asset rows.
+  async getCategoryNav() {
+    return prisma.category.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        image: true,
+        short_description: true,
+        created_at: true,
+        updated_at: true,
+        sub_categories: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            image: true,
+            category_id: true,
+            created_at: true,
+            updated_at: true,
+            _count: { select: { assets: true } },
+          },
+        },
+      },
+      orderBy: { id: "desc" },
+    });
+  }
+
   async getCategorysByPagination({ page = 1, limit = 10, order = "desc" }) {
     const sortOrder = order?.toLowerCase() === "asc" ? "asc" : "desc";
 

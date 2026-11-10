@@ -727,6 +727,23 @@ class AssetService {
     return this.normalizeAssetSize(convertBigIntToString(assets));
   }
 
+  // Only what the website sitemap reads; ~10x smaller than the full asset list.
+  async getSitemapAssets() {
+    return prisma.asset.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        sub_category_id: true,
+        cover: true,
+        created_at: true,
+        updated_at: true,
+        images: { select: { image: true } },
+      },
+      orderBy: { id: "desc" },
+    });
+  }
+
   /**
    * Lightweight search used by the admin "linked assets" picker.
    * Returns only the fields a selector chip needs.

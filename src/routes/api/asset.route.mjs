@@ -18,6 +18,9 @@ assetRouter.post("/complete", assetController.completeUpload);
 // Get assets with pagination (must come before /:id route)
 assetRouter.get("/pages", assetController.getAssetsByPagination);
 
+// Slim list for the website sitemap (must come before /:id)
+assetRouter.get("/sitemap", assetController.getSitemapAssets);
+
 // Lightweight search for the admin linked-assets picker (must come before /:id)
 assetRouter.get("/search-lite", assetController.searchLite);
 

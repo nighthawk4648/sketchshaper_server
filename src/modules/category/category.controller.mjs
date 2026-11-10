@@ -37,6 +37,11 @@ class CategoryController {
     res.status(200).json(resDoc);
   });
 
+  getCategoryNav = catchError(async (req, res, next) => {
+    const nav = await categoryService.getCategoryNav();
+    res.status(200).json(responseHandler(200, "Category nav retrieved successfully", nav));
+  });
+
   getCategorysByPagination = catchError(async (req, res, next) => {
     const { page, limit, order } = req.query;
     const categorys = await categoryService.getCategorysByPagination({ page: parseInt(page), limit: parseInt(limit), order });

@@ -6,6 +6,9 @@ const categoryRouter = Router();
 
 categoryRouter.get("/pages", categoryController.getCategorysByPagination);
 
+// Slim tree for the website (must come before /:id)
+categoryRouter.get("/nav", categoryController.getCategoryNav);
+
 categoryRouter
   .route("/:id")
   .get(categoryController.getCategory)

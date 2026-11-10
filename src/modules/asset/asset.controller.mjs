@@ -498,6 +498,11 @@ class AssetController {
     res.status(200).json(resDoc);
   });
 
+  getSitemapAssets = catchError(async (req, res, next) => {
+    const assets = await assetService.getSitemapAssets();
+    res.status(200).json(responseHandler(200, "Sitemap assets retrieved successfully", assets));
+  });
+
   searchLite = catchError(async (req, res, next) => {
     const assets = await assetService.searchLite(req.query);
     const resDoc = responseHandler(200, "Assets retrieved successfully", assets);
