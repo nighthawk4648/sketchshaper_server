@@ -6,6 +6,7 @@ import morgan from "morgan";
 import { config } from "./config/config.mjs";
 import globalErrorHandler from "./middlewares/errors/globalErrorHandler.mjs";
 import indexRouter from "./routes/api/index.mjs";
+import { checkRevalidateConfig } from "./utils/revalidate.mjs";
 
 // Fix for BigInt serialization
 BigInt.prototype.toJSON = function () {
@@ -84,4 +85,5 @@ app.listen(config.port, () => {
   console.log(
     `Server is running in ${config.mode} mode at http://${config.host}:${config.port}`,
   );
+  checkRevalidateConfig();
 });

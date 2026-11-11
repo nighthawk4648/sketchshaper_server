@@ -1,6 +1,8 @@
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import socialService from "./social.service.mjs";
+import { revalidateFrontend } from "../../utils/revalidate.mjs";
+import { TAG } from "../../utils/cacheTags.mjs";
 
 class SocialController {
   createSocial = catchError(async (req, res, next) => {
@@ -8,6 +10,7 @@ class SocialController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend([TAG.social]);
     const resDoc = responseHandler(201, "Social created successfully", social);
     res.status(201).json(resDoc);
   });
@@ -17,6 +20,7 @@ class SocialController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend([TAG.social]);
     const resDoc = responseHandler(200, "Social updated successfully", social);
     res.status(200).json(resDoc);
   });
@@ -58,6 +62,7 @@ class SocialController {
 
   deleteSocial = catchError(async (req, res, next) => {
     await socialService.deleteSocial(req.params.id);
+    revalidateFrontend([TAG.social]);
     const resDoc = responseHandler(200, "Social deleted successfully");
     res.status(200).json(resDoc);
   });

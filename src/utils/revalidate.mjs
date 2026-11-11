@@ -3,9 +3,53 @@
  *
  * Pings the Next.js frontend /api/revalidate endpoint to purge cached tags and paths
  * whenever data is created, updated, or deleted in the backend database.
+ * Callers do not wait for it. Failures are retried, then logged (see `pm2 logs`).
  */
 
-export async function revalidateFrontend(tags = [], paths = []) {
+const RETRY_DELAYS_MS = [500, 2000]; // 3 attempts in total
+
+// Call once at startup so a missing secret is noticed on boot, not on the first admin save
+export function checkRevalidateConfig() {
+  if (process.env.REVALIDATION_SECRET) return;
+  const message =
+    "[revalidate] REVALIDATION_SECRET is not set: the website cache will NOT be purged after admin changes.";
+  if (process.env.MODE === "dev") console.warn(message);
+  else console.error(message);
+}
+
+async function send(url, secret, body, retryDelays) {
+  let lastError;
+  for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt - 1]));
+    }
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-revalidate-secret": secret,
+        },
+        body,
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) return;
+      lastError = new Error(`frontend answered HTTP ${res.status}`);
+      if (res.status < 500) break; // a wrong secret or bad payload will not fix itself
+    } catch (err) {
+      lastError = err; // frontend down or restarting: worth retrying
+    }
+  }
+  console.error(
+    `[revalidate] FAILED, website cache not purged: ${lastError.message}. Payload: ${body}`,
+  );
+}
+
+export async function revalidateFrontend(
+  tags = [],
+  paths = [],
+  { retryDelays = RETRY_DELAYS_MS } = {},
+) {
   const url =
     process.env.FRONTEND_REVALIDATE_URL ||
     (process.env.MODE === "dev"
@@ -13,54 +57,18 @@ export async function revalidateFrontend(tags = [], paths = []) {
       : "https://www.sketchshaper.com/api/revalidate");
 
   const secret = process.env.REVALIDATION_SECRET;
+  if (!secret) return; // already reported at startup by checkRevalidateConfig()
 
-  // If secret is not set yet, log warning and skip gracefully without crashing
-  if (!secret) {
-    console.warn(
-      "[Revalidate Warning] REVALIDATION_SECRET is not configured; skipping frontend cache revalidation."
-    );
-    return;
-  }
-
-  const cleanTags = Array.isArray(tags)
-    ? tags.filter(Boolean)
-    : tags
-    ? [tags]
-    : [];
-  const cleanPaths = Array.isArray(paths)
-    ? paths.filter(Boolean)
-    : paths
-    ? [paths]
-    : [];
-
+  const cleanTags = [...new Set([].concat(tags).filter(Boolean))];
+  const cleanPaths = [...new Set([].concat(paths).filter(Boolean))];
   if (cleanTags.length === 0 && cleanPaths.length === 0) return;
 
-  // Non-blocking fire-and-forget: do not wait or delay the API response
-  try {
-    fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-revalidate-secret": secret,
-      },
-      body: JSON.stringify({ tags: cleanTags, paths: cleanPaths }),
-      signal: AbortSignal.timeout(5000), // 5-second timeout
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          console.warn(
-            `[Revalidate Warning] Frontend returned HTTP ${res.status}`
-          );
-        }
-      })
-      .catch((err) => {
-        // Log softly without disrupting backend server operations
-        console.warn("[Revalidate Warning] Webhook unreachable:", err.message);
-      });
-  } catch (err) {
-    console.warn("[Revalidate Warning] Fetch dispatch failed:", err.message);
-  }
+  return send(
+    url,
+    secret,
+    JSON.stringify({ tags: cleanTags, paths: cleanPaths }),
+    retryDelays,
+  );
 }
 
 export default revalidateFrontend;
-

@@ -2,6 +2,7 @@ import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import subcategoryService from "./sub.category.service.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
+import { TAG, categoryTags } from "../../utils/cacheTags.mjs";
 import { prisma } from "../../db/prisma.mjs";
 
 class SubCategoryController {
@@ -13,13 +14,7 @@ class SubCategoryController {
     const parentCatId = req.body.category_id
       ? parseInt(req.body.category_id)
       : null;
-    revalidateFrontend([
-      "sub-categories",
-      "categories",
-      parentCatId ? `category-${parentCatId}` : null,
-      "assets",
-      "general",
-    ]);
+    revalidateFrontend([TAG.nav, parentCatId && TAG.category(parentCatId)]);
     const resDoc = responseHandler(
       201,
       "SubCategory created successfully",
@@ -43,16 +38,12 @@ class SubCategoryController {
       files: req.files,
     });
 
-    const tagsToPurge = new Set([
-      "sub-categories",
-      `subcategory-${req.params.id}`,
-      "categories",
-      "assets",
-      "general",
-    ]);
-    if (oldCatId) tagsToPurge.add(`category-${oldCatId}`);
-    if (newCatId) tagsToPurge.add(`category-${newCatId}`);
-    revalidateFrontend(Array.from(tagsToPurge));
+    revalidateFrontend(
+      categoryTags({
+        categoryIds: [oldCatId, newCatId].filter(Boolean),
+        subCategoryId: req.params.id,
+      }),
+    );
 
     const resDoc = responseHandler(
       200,
@@ -108,15 +99,12 @@ class SubCategoryController {
 
     await subcategoryService.deleteSubCategory(req.params.id);
 
-    const tagsToPurge = [
-      "sub-categories",
-      `subcategory-${req.params.id}`,
-      "categories",
-      "assets",
-      "general",
-    ];
-    if (catId) tagsToPurge.push(`category-${catId}`);
-    revalidateFrontend(tagsToPurge);
+    revalidateFrontend(
+      categoryTags({
+        categoryIds: [catId].filter(Boolean),
+        subCategoryId: req.params.id,
+      }),
+    );
 
     const resDoc = responseHandler(200, "SubCategory deleted successfully");
     res.status(200).json(resDoc);
