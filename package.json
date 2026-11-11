@@ -10,7 +10,7 @@
 		"build": "echo '✅ No build step needed for backend — use pm2 restart api to deploy changes'",
 		"build:prisma": "prisma migrate dev --name init",
 		"index:google": "node src/scripts/indexGoogleUrls.mjs",
-		"test": "node --test src/middlewares/uploads/upload.test.mjs src/utils/slugHelper.test.mjs src/utils/googleIndexer.test.mjs src/middlewares/errors/globalErrorHandler.test.mjs"
+		"test": "node --test src/middlewares/uploads/upload.test.mjs src/utils/slugHelper.test.mjs src/utils/googleIndexer.test.mjs src/middlewares/errors/globalErrorHandler.test.mjs src/modules/contact/contact.test.mjs src/utils/cacheTags.test.mjs src/utils/revalidate.test.mjs src/middlewares/auth/requireAdminForWrites.test.mjs"
 	},
 	"author": "",
 	"license": "ISC",

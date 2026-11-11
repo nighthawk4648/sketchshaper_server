@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import extensionDownloadController from '../../modules/extension-download/extension-download.controller.mjs';
+import { verifyAdminAuth } from '../../middlewares/auth/verifyAdminAuth.mjs';
 
 const extensionDownloadRouter = Router();
 
@@ -16,9 +17,9 @@ extensionDownloadRouter.get('/', extensionDownloadController.getAllDownloadCount
 extensionDownloadRouter.get('/paginated/list', extensionDownloadController.getDownloadCountByPagination);
 
 // Reset download count for an extension (admin only)
-extensionDownloadRouter.put('/reset/:extensionName', extensionDownloadController.resetDownloadCount);
+extensionDownloadRouter.put('/reset/:extensionName', verifyAdminAuth, extensionDownloadController.resetDownloadCount);
 
 // Delete an extension record (admin only)
-extensionDownloadRouter.delete('/:extensionName', extensionDownloadController.deleteExtension);
+extensionDownloadRouter.delete('/:extensionName', verifyAdminAuth, extensionDownloadController.deleteExtension);
 
 export default extensionDownloadRouter;

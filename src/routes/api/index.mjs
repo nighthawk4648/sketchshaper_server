@@ -14,6 +14,7 @@ import blogsRouter from "./blog.route.mjs";
 import galleryRouter from "./gallery.route.mjs";
 import patreonRouter from "./patreon.route.mjs";
 import protectedRouter from "./protected.route.mjs";
+import { requireAdminForWrites } from "../../middlewares/auth/requireAdminForWrites.mjs";
 
 import extensionDownloadRouter from "./extension-download.route.mjs";
 import contactRouter from "./contact.route.mjs";
@@ -31,17 +32,17 @@ indexRouter.get("/", (req, res, next) => {
 indexRouter.get("/search", commonController.search);
 
 indexRouter.use("/admins", adminRouter);
-indexRouter.use("/sliders", sliderRouter);
-indexRouter.use("/categories", categoryRouter);
-indexRouter.use("/sub-categories", subcategoryRouter);
-indexRouter.use("/assets", assetRouter);
-indexRouter.use("/pages", pageRouter);
-indexRouter.use("/general", generalRouter);
-indexRouter.use("/social", socialRouter);
-indexRouter.use("/innovative", innovativeFurnituresRouter);
-indexRouter.use("/supportedBy", supportedByRouter);
-indexRouter.use("/blogs", blogsRouter);
-indexRouter.use("/gallery", galleryRouter);
+indexRouter.use("/sliders", requireAdminForWrites, sliderRouter);
+indexRouter.use("/categories", requireAdminForWrites, categoryRouter);
+indexRouter.use("/sub-categories", requireAdminForWrites, subcategoryRouter);
+indexRouter.use("/assets", requireAdminForWrites, assetRouter);
+indexRouter.use("/pages", requireAdminForWrites, pageRouter);
+indexRouter.use("/general", requireAdminForWrites, generalRouter);
+indexRouter.use("/social", requireAdminForWrites, socialRouter);
+indexRouter.use("/innovative", requireAdminForWrites, innovativeFurnituresRouter);
+indexRouter.use("/supportedBy", requireAdminForWrites, supportedByRouter);
+indexRouter.use("/blogs", requireAdminForWrites, blogsRouter);
+indexRouter.use("/gallery", requireAdminForWrites, galleryRouter);
 indexRouter.use("/patreon", patreonRouter);
 indexRouter.use("/protected", protectedRouter);
 

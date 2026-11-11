@@ -2,6 +2,7 @@ import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import blogService from "./blog.service.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
+import { TAG } from "../../utils/cacheTags.mjs";
 
 class BlogsController {
   createBlog = catchError(async (req, res, next) => {
@@ -18,6 +19,7 @@ class BlogsController {
       meta_title,
       meta_description,
       keywords,
+      featured_asset_ids,
     } = req.body;
 
     const files = req.files;
@@ -37,9 +39,10 @@ class BlogsController {
       meta_title: meta_title?.trim() || null,
       meta_description: meta_description?.trim() || null,
       keywords: keywords?.trim() || null,
+      featured_asset_ids,
       files,
     });
-    revalidateFrontend(["blogs"]);
+    revalidateFrontend([TAG.blogs]);
     const resDoc = responseHandler(201, "blog  created successfully", blog);
     res.status(201).json(resDoc);
   });
@@ -59,6 +62,7 @@ class BlogsController {
       meta_title,
       meta_description,
       keywords,
+      featured_asset_ids,
     } = req.body;
     const files = req.files;
 
@@ -89,10 +93,11 @@ class BlogsController {
           ? meta_description?.trim() || null
           : undefined,
       keywords: keywords !== undefined ? keywords?.trim() || null : undefined,
+      featured_asset_ids,
       files,
     });
 
-    revalidateFrontend(["blogs", `blog-${id}`]);
+    revalidateFrontend([TAG.blogs, TAG.blog(id)]);
 
     // Send response
     const resDoc = responseHandler(200, "blog updated successfully", blog);
@@ -141,7 +146,7 @@ class BlogsController {
 
   deleteBlog = catchError(async (req, res, next) => {
     await blogService.deleteBlog(req.params.id);
-    revalidateFrontend(["blogs", `blog-${req.params.id}`]);
+    revalidateFrontend([TAG.blogs, TAG.blog(req.params.id)]);
     const resDoc = responseHandler(200, "blog deleted successfully");
     res.status(200).json(resDoc);
   });

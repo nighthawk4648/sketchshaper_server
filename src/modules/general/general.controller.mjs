@@ -2,13 +2,14 @@ import catchError from '../../middlewares/errors/catchError.mjs';
 import responseHandler from '../../utils/responseHandler.mjs';
 import adminService from './general.service.mjs';
 import { revalidateFrontend } from '../../utils/revalidate.mjs';
+import { TAG } from "../../utils/cacheTags.mjs";
 
 class GeneralController {
 	upsertAboutUs = catchError(async (req, res, next) => {
 		const aboutUs = await adminService.upsertAboutUs({
 			...req.body, files: req.files
 		});
-		revalidateFrontend(["general"]);
+		revalidateFrontend([TAG.general]);
 		const resDoc = responseHandler(
 			200,
 			'About Us updated successfully',
@@ -29,7 +30,7 @@ class GeneralController {
 
 	upsertApplicationSettings = catchError(async (req, res, next) => {
 		const settings = await adminService.upsertApplicationSettings({ ...req.body, files: req.files });
-		revalidateFrontend(["general"]);
+		revalidateFrontend([TAG.general]);
 		const resDoc = responseHandler(
 			200,
 			'Application settings updated successfully',

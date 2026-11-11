@@ -8,6 +8,8 @@ import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
 import { notifyGoogleAsset } from "../../utils/googleIndexer.mjs";
+import { getLinkedParentTags } from "../../utils/linkedAssets.mjs";
+import { TAG, assetTags } from "../../utils/cacheTags.mjs";
 
 const cleanupUploadedFiles = (files) => {
   if (Array.isArray(files)) {
@@ -124,6 +126,13 @@ class AssetController {
       ...req.body,
       files: req.files,
     });
+    revalidateFrontend(
+      assetTags({
+        id: req.params.id,
+        subCategoryIds: [asset.sub_category_id].filter(Boolean),
+        linked: await getLinkedParentTags(req.params.id),
+      }),
+    );
     const resDoc = responseHandler(
       200,
       "Preview image updated successfully",
@@ -203,15 +212,14 @@ class AssetController {
       files: req.files,
     });
     const parentCatId = subCategory.category_id;
-    revalidateFrontend([
-      "assets",
-      `asset-${asset.id}`,
-      "categories",
-      parentCatId ? `category-${parentCatId}` : null,
-      "sub-categories",
-      `subcategory-${subCategoryId}`,
-      "general",
-    ]);
+    revalidateFrontend(
+      assetTags({
+        id: asset.id,
+        subCategoryIds: [subCategoryId],
+        categoryIds: [parentCatId].filter(Boolean),
+        countChanged: true,
+      }),
+    );
     notifyGoogleAsset(
       {
         ...asset,
@@ -270,6 +278,7 @@ class AssetController {
       cover_alt,
       newImageAlts,
       existingImageAlts,
+      used_asset_ids,
     } = req.body;
 
     if (name !== undefined && (!name || !name.trim())) {
@@ -369,6 +378,7 @@ class AssetController {
       newImageAlts,
       existingImageAlts,
       removedImageIds,
+      used_asset_ids,
       files: req.files,
     });
 
@@ -378,18 +388,16 @@ class AssetController {
       sub_category_id !== undefined ? parseInt(sub_category_id) : oldSubId;
     const newCatId = newSubCategory ? newSubCategory.category_id : oldCatId;
 
-    const tagsToPurge = new Set([
-      "assets",
-      `asset-${id}`,
-      "categories",
-      "sub-categories",
-      "general",
-    ]);
-    if (oldCatId) tagsToPurge.add(`category-${oldCatId}`);
-    if (oldSubId) tagsToPurge.add(`subcategory-${oldSubId}`);
-    if (newCatId) tagsToPurge.add(`category-${newCatId}`);
-    if (newSubId) tagsToPurge.add(`subcategory-${newSubId}`);
-    revalidateFrontend(Array.from(tagsToPurge));
+    // Nav counts only change when the asset moved to another sub-category
+    revalidateFrontend(
+      assetTags({
+        id,
+        subCategoryIds: [oldSubId, newSubId].filter(Boolean),
+        categoryIds: [oldCatId, newCatId].filter(Boolean),
+        countChanged: oldSubId !== newSubId,
+        linked: await getLinkedParentTags(id),
+      }),
+    );
 
     notifyGoogleAsset(
       {
@@ -424,13 +432,14 @@ class AssetController {
     }
 
     const asset = await assetService.updateAssetAccessType(id, access_type);
-    revalidateFrontend([
-      "assets",
-      `asset-${id}`,
-      "categories",
-      "sub-categories",
-      "general",
-    ]);
+    revalidateFrontend(
+      assetTags({
+        id,
+        subCategoryIds: [asset.sub_category_id].filter(Boolean),
+        categoryIds: [asset.sub_category?.category_id].filter(Boolean),
+        linked: await getLinkedParentTags(id),
+      }),
+    );
     const resDoc = responseHandler(
       200,
       `Asset marked as ${access_type} successfully`,
@@ -463,10 +472,10 @@ class AssetController {
       access_type,
     );
     revalidateFrontend([
-      "assets",
-      "categories",
-      "sub-categories",
-      "general",
+      TAG.assets,
+      TAG.categories,
+      TAG.subCategories,
+      ...(await getLinkedParentTags(ids)),
     ]);
     const resDoc = responseHandler(
       200,
@@ -483,6 +492,17 @@ class AssetController {
       "Assets retrieved successfully",
       assets,
     );
+    res.status(200).json(resDoc);
+  });
+
+  getSitemapAssets = catchError(async (req, res, next) => {
+    const assets = await assetService.getSitemapAssets();
+    res.status(200).json(responseHandler(200, "Sitemap assets retrieved successfully", assets));
+  });
+
+  searchLite = catchError(async (req, res, next) => {
+    const assets = await assetService.searchLite(req.query);
+    const resDoc = responseHandler(200, "Assets retrieved successfully", assets);
     res.status(200).json(resDoc);
   });
 
@@ -562,22 +582,20 @@ class AssetController {
       });
     }
 
+    // Must run BEFORE the delete: the cascade removes the link rows
+    const linkedTags = await getLinkedParentTags(parsedAssetId);
+
     await assetService.deleteAsset(id);
 
-    const tagsToPurge = [
-      "assets",
-      `asset-${id}`,
-      "categories",
-      "sub-categories",
-      "general",
-    ];
-    if (existingAsset.sub_category_id) {
-      tagsToPurge.push(`subcategory-${existingAsset.sub_category_id}`);
-    }
-    if (existingAsset.sub_category?.category_id) {
-      tagsToPurge.push(`category-${existingAsset.sub_category.category_id}`);
-    }
-    revalidateFrontend(tagsToPurge);
+    revalidateFrontend(
+      assetTags({
+        id,
+        subCategoryIds: [existingAsset.sub_category_id].filter(Boolean),
+        categoryIds: [existingAsset.sub_category?.category_id].filter(Boolean),
+        countChanged: true,
+        linked: linkedTags,
+      }),
+    );
 
     notifyGoogleAsset(existingAsset, "URL_DELETED");
 

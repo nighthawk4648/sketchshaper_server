@@ -5,6 +5,8 @@ import {
   notifyGoogleUrl,
   notifyGoogleAsset,
   isIndexingEnabled,
+  isGoogleAuthAvailable,
+  getGoogleAuthClient,
   getSiteUrl,
 } from "./googleIndexer.mjs";
 
@@ -110,21 +112,80 @@ describe("Google Indexer Utility", () => {
     }
   });
 
-  it("skips submission gracefully and returns structured skipped object without network calls when key path is invalid", async () => {
-    const origKeyPath = process.env.GOOGLE_INDEXING_KEY_PATH;
+  it("loads credentials directly from GOOGLE_SERVICE_ACCOUNT_KEY in env (JSON and Base64)", () => {
+    const origKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    const dummyCreds = {
+      client_email: "test-sa@project.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n",
+    };
 
     try {
+      // 1. Raw JSON string
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY = JSON.stringify(dummyCreds);
+      assert.equal(isGoogleAuthAvailable(), true);
+      const auth1 = getGoogleAuthClient();
+      assert.equal(auth1.email, dummyCreds.client_email);
+
+      // 2. Base64-encoded string
+      const b64 = Buffer.from(JSON.stringify(dummyCreds)).toString("base64");
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY = b64;
+      assert.equal(isGoogleAuthAvailable(), true);
+    } finally {
+      if (origKey !== undefined) process.env.GOOGLE_SERVICE_ACCOUNT_KEY = origKey;
+      else delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    }
+  });
+
+  it("loads credentials directly from individual GOOGLE_SERVICE_ACCOUNT_EMAIL and PRIVATE_KEY env vars", () => {
+    const origEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const origKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+    const dummyEmail = "env-sa@project.iam.gserviceaccount.com";
+    const dummyKey = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3\n-----END PRIVATE KEY-----\n";
+
+    try {
+      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = dummyEmail;
+      process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = dummyKey;
+
+      assert.equal(isGoogleAuthAvailable(), true);
+      const auth = getGoogleAuthClient();
+      assert.equal(auth.email, dummyEmail);
+    } finally {
+      if (origEmail !== undefined) process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = origEmail;
+      else delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+
+      if (origKey !== undefined) process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = origKey;
+      else delete process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+    }
+  });
+
+  it("skips submission gracefully and returns structured skipped object without network calls when key path is invalid and no env credentials", async () => {
+    const origKeyPath = process.env.GOOGLE_INDEXING_KEY_PATH;
+    const origKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    const origEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const origPrivKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+
+    try {
+      delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+      delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+      delete process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+
       // Explicit non-existent path MUST NOT fall back to candidates on disk
       process.env.GOOGLE_INDEXING_KEY_PATH = "/tmp/strictly-nonexistent-key.json";
 
       const result = await notifyGoogleUrl("https://www.sketchshaper.com/test-url");
       assert.deepEqual(result, { ok: false, skipped: true });
     } finally {
-      if (origKeyPath !== undefined) {
-        process.env.GOOGLE_INDEXING_KEY_PATH = origKeyPath;
-      } else {
-        delete process.env.GOOGLE_INDEXING_KEY_PATH;
-      }
+      if (origKeyPath !== undefined) process.env.GOOGLE_INDEXING_KEY_PATH = origKeyPath;
+      else delete process.env.GOOGLE_INDEXING_KEY_PATH;
+
+      if (origKey !== undefined) process.env.GOOGLE_SERVICE_ACCOUNT_KEY = origKey;
+      else delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+      if (origEmail !== undefined) process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = origEmail;
+      else delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+
+      if (origPrivKey !== undefined) process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = origPrivKey;
+      else delete process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
     }
   });
 });
