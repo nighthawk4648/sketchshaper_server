@@ -3,9 +3,8 @@ import responseHandler from "../../utils/responseHandler.mjs";
 import assetService from "./asset.service.mjs";
 import fs from "fs";
 import path from "path";
-import jwt from "jsonwebtoken";
-import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
+import { assertProDownload } from "../pro/pro.service.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
 import { notifyGoogleAsset } from "../../utils/googleIndexer.mjs";
 import { getLinkedParentTags } from "../../utils/linkedAssets.mjs";
@@ -636,77 +635,8 @@ class AssetController {
 
     const fileInfo = await assetService.downloadAsset(id);
 
-    // Conditional Patreon Gating: If asset is marked as paid, enforce active patron status
-    if (fileInfo.accessType === "paid") {
-      const authHeader = req.headers.authorization;
-      let token = null;
-
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        token = authHeader.split(" ")[1];
-      } else if (req.query.token) {
-        token = req.query.token;
-      }
-
-      if (!token) {
-        return res.status(401).json({
-          status: "error",
-          code: 401,
-          message:
-            "No token provided. Please login with Patreon to download this paid asset.",
-        });
-      }
-
-      try {
-        const decoded = jwt.verify(token, config.jwt_secret);
-        const user = await prisma.patreonUser.findUnique({
-          where: { id: decoded.id },
-        });
-
-        if (!user) {
-          return res.status(401).json({
-            status: "error",
-            code: 401,
-            message: "User not found. Please login with Patreon.",
-          });
-        }
-
-        if (!user.is_active_patron) {
-          return res.status(403).json({
-            status: "error",
-            code: 403,
-            message:
-              "Your Patreon subscription is not active. Please subscribe to unlock paid assets.",
-          });
-        }
-
-        req.user = {
-          id: user.id,
-          patreonId: user.patreon_id,
-          membershipTier: user.membership_tier,
-          isActivePatron: user.is_active_patron,
-        };
-      } catch (authError) {
-        if (authError.name === "JsonWebTokenError") {
-          return res.status(401).json({
-            status: "error",
-            code: 401,
-            message: "Invalid Patreon token.",
-          });
-        }
-        if (authError.name === "TokenExpiredError") {
-          return res.status(401).json({
-            status: "error",
-            code: 401,
-            message: "Token expired. Please login again.",
-          });
-        }
-        return res.status(500).json({
-          status: "error",
-          code: 500,
-          message: "Patreon authentication failed.",
-        });
-      }
-    }
+    // PRO models need a signed-in visitor with PRO access (the cookie proves who they are)
+    if (fileInfo.accessType === "paid") await assertProDownload(req);
 
     // Construct full file path
     const fullPath = path.join(process.cwd(), "uploads", fileInfo.filePath);

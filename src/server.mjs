@@ -42,11 +42,9 @@ app.use(
       } else if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        // Log the rejected origin for debugging
+        // Unknown sites must not read responses made with our session cookies
         console.warn(`CORS rejected origin: ${origin}`);
-        console.warn(`Allowed origins: ${JSON.stringify(allowedOrigins)}`);
-        // In production, still allow the request but log it
-        callback(null, true);
+        callback(null, false);
       }
     },
     credentials: true,

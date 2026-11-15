@@ -1,6 +1,15 @@
 import catchError from '../../middlewares/errors/catchError.mjs';
 import responseHandler from '../../utils/responseHandler.mjs';
 import adminService from './admin.service.mjs';
+import {
+	ADMIN_COOKIE,
+	ADMIN_SESSION_MS,
+	clearSessionCookie,
+	createSession,
+	deleteSession,
+	readCookie,
+	setSessionCookie,
+} from '../../utils/session.mjs';
 
 class AdminController {
 	createAdmin = catchError(async (req, res, next) => {
@@ -13,8 +22,20 @@ class AdminController {
 	loginAdmin = catchError(async (req, res, next) => {
 		const { email, password } = req.body;
 		const admin = await adminService.loginAdmin({ email, password });
+		const { token, expiresAt } = await createSession(
+			{ kind: 'admin', adminId: admin.id, ttlMs: ADMIN_SESSION_MS },
+			req
+		);
+		setSessionCookie(res, ADMIN_COOKIE, token, expiresAt);
 		const resDoc = responseHandler(200, 'Admin logged in successfully', admin);
 		res.status(200).json(resDoc);
+	});
+
+	// Ends this browser's session on the server, not just in the browser
+	logoutAdmin = catchError(async (req, res, next) => {
+		await deleteSession(readCookie(req, ADMIN_COOKIE));
+		clearSessionCookie(res, ADMIN_COOKIE);
+		res.status(200).json(responseHandler(200, 'Logged out'));
 	});
 
 	updateAdmin = catchError(async (req, res, next) => {

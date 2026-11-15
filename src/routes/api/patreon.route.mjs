@@ -1,26 +1,18 @@
-import { Router } from 'express';
-import patreonController from '../../modules/patreon/patreon.controller.mjs';
-import { verifyPatreonAuth } from '../../middlewares/auth/verifyPatreonAuth.mjs';
-import { verifyAdminAuth } from '../../middlewares/auth/verifyAdminAuth.mjs';
+import { Router } from "express";
+import patreonController from "../../modules/patreon/patreon.controller.mjs";
+import { verifyAdminAuth } from "../../middlewares/auth/verifyAdminAuth.mjs";
+import { clientIp, rateLimiter } from "../../utils/rateLimit.mjs";
 
 const patreonRouter = Router();
 
-// Public routes
-patreonRouter.get('/auth', patreonController.getAuthUrl);
-patreonRouter.get('/callback', patreonController.handleCallback);
+// Sign in with Patreon. The callback address is the one already registered in Patreon's developer portal.
+const limit = rateLimiter({ windowMs: 10 * 60 * 1000, max: 30, key: (req) => `patreon:${req.path}:${clientIp(req)}` });
+patreonRouter.get("/start", limit, patreonController.start);
+patreonRouter.get("/callback", limit, patreonController.callback);
 
-// Protected routes (require Patreon authentication)
-patreonRouter.get('/verify', verifyPatreonAuth, patreonController.verifyStatus);
-patreonRouter.get('/me', verifyPatreonAuth, patreonController.getCurrentUser);
-patreonRouter.get('/check-download/:assetId', verifyPatreonAuth, patreonController.checkDownloadEligibility);
-
-// Admin routes (require admin authentication)
-patreonRouter.get('/users', verifyAdminAuth, patreonController.getAllUsers);
-patreonRouter.get('/users/:id', verifyAdminAuth, patreonController.getUser);
-patreonRouter.post(
-	'/users/:id/revoke',
-	verifyAdminAuth,
-	patreonController.revokeAccess
-);
+// Admin dashboard
+patreonRouter.get("/users", verifyAdminAuth, patreonController.getAllUsers);
+patreonRouter.get("/users/:id", verifyAdminAuth, patreonController.getUser);
+patreonRouter.post("/users/:id/revoke", verifyAdminAuth, patreonController.revokeAccess);
 
 export default patreonRouter;
