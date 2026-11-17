@@ -48,6 +48,8 @@ const base = `http://127.0.0.1:${server.address().port}/api/members`;
 
 test.after(async () => {
   server.close();
+  const ours = { site_user: { email: { startsWith: `mb-test-${stamp}-` } } };
+  await prisma.manualPayment.deleteMany({ where: ours }); // payments protect their account, so they go first
   await prisma.siteUser.deleteMany({ where: { email: { startsWith: `mb-test-${stamp}-` } } });
   await prisma.user.delete({ where: { id: admin.id } });
   await prisma.$disconnect();
@@ -95,9 +97,10 @@ test("filters: pro, free, patreon", async () => {
 });
 
 test("manual PRO makes an email or Google account PRO, shows on the website, and ends on its end date", async () => {
-  const set = await setAccess(googler.id, { access: "pro", note: "  Paid via WhatsApp  " });
+  const set = await setAccess(googler.id, { access: "pro", tier: " Sponsor ", note: "  Paid via WhatsApp  " });
   assert.equal(set.status, 200);
   assert.equal(set.body.data.proSource, "manual");
+  assert.equal(set.body.data.accessTier, "Sponsor");
   assert.equal(set.body.data.accessNote, "Paid via WhatsApp");
   assert.equal(await isPro(googler.id, { refresh: true }), true);
   assert.equal((await proStatus(googler.id)).isPro, true);
@@ -115,7 +118,8 @@ test("manual PRO makes an email or Google account PRO, shows on the website, and
   assert.equal(member.manualExpired, true);
   assert.equal(member.isPro, false);
 
-  await setAccess(googler.id, { access: "normal" });
+  const back = await setAccess(googler.id, { access: "normal", tier: "Sponsor" });
+  assert.equal(back.body.data.accessTier, null, "the tier only belongs to manual PRO");
   assert.equal(await isPro(googler.id), false);
 });
 
@@ -142,6 +146,7 @@ test("bad input is refused with a clear message", async () => {
   assert.equal((await setAccess(plain.id, { access: "pro", until: "not a date" })).status, 400);
   assert.equal((await setAccess(plain.id, { access: "pro", until: new Date(Date.now() - DAY).toISOString() })).status, 400);
   assert.equal((await setAccess(plain.id, { access: "pro", note: "x".repeat(256) })).status, 400);
+  assert.equal((await setAccess(plain.id, { access: "pro", tier: "x".repeat(101) })).status, 400);
   assert.equal((await setAccess(999999999, { access: "pro" })).status, 404);
   assert.equal((await call("/999999999")).status, 404);
   assert.equal(await isPro(plain.id), false, "nothing changed");
@@ -169,4 +174,79 @@ test("the PRO rule itself", () => {
   assert.deepEqual(accessOf({ access: "pro", access_until: earlier }, null, now), { isPro: false, proSource: null });
   assert.deepEqual(accessOf({ access: "pro", access_until: earlier }, active, now), { isPro: true, proSource: "patreon" });
   assert.deepEqual(accessOf({ access: "blocked" }, active, now), { isPro: false, proSource: "blocked" });
+});
+
+// ----- Payments made outside Patreon -----
+
+const pay = (id, body) => call(`/${id}/payments`, { method: "POST", body });
+const today = new Date().toISOString().slice(0, 10);
+
+test("payments: recorded in any currency, newest first, totals per currency never mixed", async () => {
+  const a = await pay(plain.id, { amount: "10", currency: "usd", paidOn: "2026-09-17", note: " WhatsApp " });
+  assert.equal(a.status, 200);
+  await pay(plain.id, { amount: "10.50", currency: "USD", paidOn: "2026-10-17" });
+  const c = await pay(plain.id, { amount: "1,250", currency: "BDT", paidOn: today });
+  const { payments, totals } = c.body.data;
+  assert.deepEqual(payments.map((p) => [p.paidOn, p.amountMinor, p.currency]), [
+    [today, 125000, "BDT"],
+    ["2026-10-17", 1050, "USD"],
+    ["2026-09-17", 1000, "USD"],
+  ]);
+  assert.equal(payments[2].note, "WhatsApp");
+  assert.equal(payments[2].addedBy, mail("admin"), "who entered it");
+  assert.deepEqual(totals, [
+    { currency: "BDT", amountMinor: 125000 },
+    { currency: "USD", amountMinor: 2050 },
+  ]);
+  assert.deepEqual((await call(`/${plain.id}/payments`)).body.data.totals, totals, "the same when read back");
+});
+
+test("payments: a payment changes nothing about PRO access", async () => {
+  assert.equal(await isPro(plain.id), false);
+  assert.equal((await call(`/${plain.id}`)).body.data.access, "normal");
+});
+
+test("payments: wrong input is refused with a message the admin can act on", async () => {
+  const refused = async (body, pattern) => {
+    const res = await pay(plain.id, { amount: "10", currency: "USD", paidOn: today, ...body });
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.match(res.body.message, pattern);
+  };
+  await refused({ currency: "XYZ" }, /valid currency/);
+  await refused({ currency: "" }, /valid currency/);
+  await refused({ amount: "10.555" }, /at most 2 decimals/);
+  await refused({ amount: "500.5", currency: "JPY" }, /no decimals/);
+  await refused({ amount: "0" }, /more than 0/);
+  await refused({ amount: "ten" }, /as a number/);
+  await refused({ paidOn: "2026-02-30" }, /date/);
+  await refused({ paidOn: "" }, /date/);
+  await refused({ paidOn: "2999-01-01" }, /future/);
+  await refused({ note: "x".repeat(256) }, /at most 255/);
+  assert.equal((await pay(999999999, { amount: "10", currency: "USD", paidOn: today })).status, 404);
+});
+
+test("payments: delete removes only that member's payment, and only admins can touch payments", async () => {
+  const before = (await call(`/${plain.id}/payments`)).body.data.payments;
+  const target = before.find((p) => p.currency === "BDT");
+
+  // Someone else's id in the URL does not reach this payment
+  assert.equal((await call(`/${googler.id}/payments/${target.id}`, { method: "DELETE" })).status, 404);
+  // Visitors and signed-out callers are refused
+  const { token } = await createSession({ kind: "website", siteUserId: plain.id, ttlMs: 60_000 }, fakeReq);
+  const visitor = `${ADMIN_COOKIE}=${token}`;
+  assert.equal((await call(`/${plain.id}/payments`, { cookie: visitor })).status, 401);
+  assert.equal((await call(`/${plain.id}/payments`, { method: "POST", cookie: null, body: { amount: "1", currency: "USD", paidOn: today } })).status, 401);
+  assert.equal((await call(`/${plain.id}/payments/${target.id}`, { method: "DELETE", cookie: visitor })).status, 401);
+
+  const res = await call(`/${plain.id}/payments/${target.id}`, { method: "DELETE" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.payments.length, before.length - 1);
+  assert.deepEqual(res.body.data.totals, [{ currency: "USD", amountMinor: 2050 }]);
+  assert.equal((await call(`/${plain.id}/payments/${target.id}`, { method: "DELETE" })).status, 404, "already gone");
+});
+
+test("payments: an account with payments cannot be deleted, so money records never vanish by accident", async () => {
+  assert.ok((await prisma.manualPayment.count({ where: { site_user_id: plain.id } })) > 0);
+  await assert.rejects(prisma.siteUser.delete({ where: { id: plain.id } }));
+  assert.ok(await prisma.siteUser.findUnique({ where: { id: plain.id } }), "account still there");
 });

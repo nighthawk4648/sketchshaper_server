@@ -86,63 +86,6 @@ export async function refreshLinkStatus(link) {
   }
 }
 
-// ----- Admin dashboard (same response shape as before) -----
-
-const adminShape = (link) => ({
-  id: link.id,
-  patreon_id: link.patreon_id,
-  email: link.site_user.email,
-  full_name: link.site_user.name,
-  membership_tier: link.membership_tier,
-  is_active_patron: link.is_active_patron,
-  pledge_amount_cents: link.pledge_amount_cents,
-  pledge_amount: link.pledge_amount_cents / 100,
-  last_verified_at: link.last_verified_at,
-  created_at: link.created_at,
-  updated_at: link.updated_at,
-});
-
-export async function listPatreonUsers({ page = 1, limit = 10, order = "desc", search = "", status = "" } = {}) {
-  const where = {};
-  const q = String(search || "").trim();
-  if (q) where.site_user = { OR: [{ name: { contains: q } }, { email: { contains: q } }] };
-  if (status === "active") where.is_active_patron = true;
-  else if (status === "inactive") where.is_active_patron = false;
-
-  const take = Math.min(Math.max(parseInt(limit) || 10, 1), 1000);
-  const safePage = Math.max(parseInt(page) || 1, 1);
-  const [links, total] = await Promise.all([
-    prisma.patreonLink.findMany({
-      where,
-      include: { site_user: { select: { email: true, name: true } } },
-      orderBy: { created_at: order === "asc" ? "asc" : "desc" },
-      skip: (safePage - 1) * take,
-      take,
-    }),
-    prisma.patreonLink.count({ where }),
-  ]);
-  return {
-    result: links.map(adminShape),
-    pagination: { total, totalPages: Math.ceil(total / take) || 1, currentPage: safePage, limit: take },
-  };
-}
-
-export async function getPatreonUser(id) {
-  const link = await prisma.patreonLink.findUnique({
-    where: { id: parseInt(id) },
-    include: { site_user: { select: { email: true, name: true } } },
-  });
-  if (!link) throw Object.assign(new Error("Patreon user not found"), { status: 404 });
-  return adminShape(link);
-}
-
-// "Revoke" blocks the account, so the next Patreon re-check cannot turn PRO back on (undo it on the Members page)
-export async function revokeUserAccess(id) {
-  const link = await prisma.patreonLink.findUnique({ where: { id: parseInt(id) || 0 } });
-  if (!link) throw Object.assign(new Error("Patreon user not found"), { status: 404 });
-  await prisma.siteUser.update({ where: { id: link.site_user_id }, data: { access: "blocked", access_until: null } });
-}
-
 // One-time: copy people from the old PatreonUser table (Patreon-only sign-ins) into accounts. Safe to run twice.
 export async function importLegacyUsers() {
   const legacy = await prisma.patreonUser.findMany();

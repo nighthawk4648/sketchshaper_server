@@ -1,9 +1,11 @@
 import { prisma } from "../../db/prisma.mjs";
 import { AuthError } from "../auth/auth.service.mjs";
 import { accessOf } from "../pro/pro.service.mjs";
+import { isCurrency, toMinorUnits } from "../../utils/money.mjs";
 
 const ACCESS = ["normal", "pro", "blocked"];
 const NOTE_MAX = 255;
+const TIER_MAX = 100;
 
 // The PRO rule (see accessOf) written as a database filter
 const proWhere = (now) => ({
@@ -35,6 +37,7 @@ function memberShape(user, now = new Date()) {
     createdAt: user.created_at,
     signInMethods: [user.password && "email", user.google_id && "google", link && "patreon"].filter(Boolean),
     access: user.access,
+    accessTier: user.access_tier,
     accessUntil: user.access_until,
     accessNote: user.access_note,
     manualExpired: user.access === "pro" && Boolean(user.access_until) && user.access_until <= now,
@@ -53,7 +56,7 @@ function memberShape(user, now = new Date()) {
   };
 }
 
-export async function listMembers({ page = 1, limit = 20, search = "", filter = "all", order = "desc" } = {}) {
+export async function listMembers({ page = 1, limit = 20, search = "", filter = "all" } = {}) {
   const now = new Date();
   const where = { ...(FILTERS[filter] || FILTERS.all)(now) };
   const q = String(search || "").trim();
@@ -65,7 +68,7 @@ export async function listMembers({ page = 1, limit = 20, search = "", filter = 
     prisma.siteUser.findMany({
       where,
       include: { patreon_link: true },
-      orderBy: { created_at: order === "asc" ? "asc" : "desc" },
+      orderBy: { created_at: "desc" },
       skip: (safePage - 1) * take,
       take,
     }),
@@ -85,9 +88,10 @@ async function findMember(id) {
 
 export const getMember = async (id) => memberShape(await findMember(id));
 
-// The admin's PRO switch: normal (Patreon decides), pro (by hand, optional end date) or blocked
-export async function setAccess(id, { access, until = null, note = null } = {}) {
+export async function setAccess(id, { access, tier = null, until = null, note = null } = {}) {
   if (!ACCESS.includes(access)) throw new AuthError("Access must be normal, pro or blocked.");
+  const cleanTier = access === "pro" && typeof tier === "string" ? tier.trim() : "";
+  if (cleanTier.length > TIER_MAX) throw new AuthError(`The tier name can be at most ${TIER_MAX} characters.`);
   let accessUntil = null;
   if (access === "pro" && until) {
     accessUntil = new Date(until);
@@ -100,10 +104,86 @@ export async function setAccess(id, { access, until = null, note = null } = {}) 
   const user = await findMember(id);
   const updated = await prisma.siteUser.update({
     where: { id: user.id },
-    data: { access, access_until: accessUntil, access_note: cleanNote || null },
+    data: { access, access_tier: cleanTier || null, access_until: accessUntil, access_note: cleanNote || null },
     include: { patreon_link: true },
   });
   return memberShape(updated);
+}
+
+// ----- Payments made outside Patreon, recorded by an admin -----
+
+const paymentShape = (p) => ({
+  id: p.id,
+  amountMinor: p.amount_minor,
+  currency: p.currency,
+  paidOn: p.paid_on.toISOString().slice(0, 10),
+  note: p.note,
+  addedBy: p.added_by,
+  createdAt: p.created_at,
+});
+
+// Totals per currency: different currencies are never added together
+export async function listPayments(id) {
+  const user = await findMember(id);
+  const [payments, sums] = await Promise.all([
+    prisma.manualPayment.findMany({ where: { site_user_id: user.id }, orderBy: [{ paid_on: "desc" }, { id: "desc" }] }),
+    prisma.manualPayment.groupBy({ by: ["currency"], where: { site_user_id: user.id }, _sum: { amount_minor: true } }),
+  ]);
+  return {
+    payments: payments.map(paymentShape),
+    totals: sums
+      .map((s) => ({ currency: s.currency, amountMinor: s._sum.amount_minor || 0 }))
+      .sort((a, b) => a.currency.localeCompare(b.currency)),
+  };
+}
+
+// paidOn is a calendar date "YYYY-MM-DD"; a day of slack allows for the admin's time zone being ahead of UTC
+function parsePaidOn(value) {
+  const text = String(value || "");
+  const date = new Date(`${text}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text) {
+    throw new AuthError("Choose the date the payment was made.");
+  }
+  if (date.getTime() > Date.now() + 86400_000) throw new AuthError("The payment date cannot be in the future.");
+  if (date.getUTCFullYear() < 2000) throw new AuthError("The payment date is too far in the past.");
+  return date;
+}
+
+export async function addPayment(id, { amount, currency, paidOn, note } = {}, addedBy = null) {
+  const code = typeof currency === "string" ? currency.trim().toUpperCase() : "";
+  if (!isCurrency(code)) throw new AuthError("Choose a valid currency.");
+  let amountMinor;
+  try {
+    amountMinor = toMinorUnits(amount, code);
+  } catch (err) {
+    throw new AuthError(err.message);
+  }
+  const paidDate = parsePaidOn(paidOn);
+  const cleanNote = typeof note === "string" ? note.trim() : "";
+  if (cleanNote.length > NOTE_MAX) throw new AuthError(`The note can be at most ${NOTE_MAX} characters.`);
+
+  const user = await findMember(id);
+  await prisma.manualPayment.create({
+    data: {
+      site_user_id: user.id,
+      amount_minor: amountMinor,
+      currency: code,
+      paid_on: paidDate,
+      note: cleanNote || null,
+      added_by: addedBy?.slice(0, 254) || null,
+    },
+  });
+  return listPayments(user.id);
+}
+
+// Only removes a payment that belongs to this member
+export async function deletePayment(id, paymentId) {
+  const user = await findMember(id);
+  const { count } = await prisma.manualPayment.deleteMany({
+    where: { id: parseInt(paymentId) || 0, site_user_id: user.id },
+  });
+  if (!count) throw new AuthError("Payment not found", 404);
+  return listPayments(user.id);
 }
 
 // Dashboard numbers, counted in the database. Patreon figures are only as fresh as each account's last check.

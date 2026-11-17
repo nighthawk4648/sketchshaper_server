@@ -53,23 +53,6 @@ class PatreonController {
       fail("patreon_failed");
     }
   });
-
-  // ----- Admin dashboard -----
-
-  getAllUsers = catchError(async (req, res) => {
-    const data = await service.listPatreonUsers(req.query);
-    res.status(200).json(responseHandler(200, "Patreon users retrieved successfully", data));
-  });
-
-  getUser = catchError(async (req, res) => {
-    const user = await service.getPatreonUser(req.params.id);
-    res.status(200).json(responseHandler(200, "Patreon user retrieved successfully", user));
-  });
-
-  revokeAccess = catchError(async (req, res) => {
-    await service.revokeUserAccess(req.params.id);
-    res.status(200).json(responseHandler(200, "User access revoked successfully"));
-  });
 }
 
 export default new PatreonController();

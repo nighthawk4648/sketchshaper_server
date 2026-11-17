@@ -1,6 +1,5 @@
 import { Router } from "express";
 import patreonController from "../../modules/patreon/patreon.controller.mjs";
-import { verifyAdminAuth } from "../../middlewares/auth/verifyAdminAuth.mjs";
 import { clientIp, rateLimiter } from "../../utils/rateLimit.mjs";
 
 const patreonRouter = Router();
@@ -9,10 +8,5 @@ const patreonRouter = Router();
 const limit = rateLimiter({ windowMs: 10 * 60 * 1000, max: 30, key: (req) => `patreon:${req.path}:${clientIp(req)}` });
 patreonRouter.get("/start", limit, patreonController.start);
 patreonRouter.get("/callback", limit, patreonController.callback);
-
-// Admin dashboard
-patreonRouter.get("/users", verifyAdminAuth, patreonController.getAllUsers);
-patreonRouter.get("/users/:id", verifyAdminAuth, patreonController.getUser);
-patreonRouter.post("/users/:id/revoke", verifyAdminAuth, patreonController.revokeAccess);
 
 export default patreonRouter;

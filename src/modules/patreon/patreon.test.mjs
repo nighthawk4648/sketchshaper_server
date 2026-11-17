@@ -288,33 +288,10 @@ test("if Patreon is unreachable the last known status is kept", async () => {
 
 // ----- Admin, old routes, crypto, import -----
 
-test("the old Patreon token routes are gone, and the admin list needs an admin", async () => {
-  for (const path of ["auth", "me", "verify", "check-download/1"]) {
+test("the old Patreon token routes and the old admin list are gone (admins use /api/members)", async () => {
+  for (const path of ["auth", "me", "verify", "check-download/1", "users", "users/1"]) {
     assert.equal((await fetch(`${base}/patreon/${path}`)).status, 404, path);
   }
-  assert.equal((await fetch(`${base}/patreon/users`)).status, 401);
-});
-
-test("the admin list shows connected Patreon users in the shape the dashboard expects", async () => {
-  const admin = await prisma.user.create({ data: { email: mail("admin"), password: "x" } });
-  const { token } = await createSession({ kind: "admin", adminId: admin.id, ttlMs: 60_000 }, { ip: "1.1.1.1", get: () => "t" });
-  const who = person({ patron: patron(500) });
-  await browserLogin(who);
-  const res = await fetch(`${base}/patreon/users?search=${encodeURIComponent(who.email)}`, { headers: { Cookie: `ss_admin=${token}` } });
-  const { data } = await res.json();
-  assert.equal(data.result.length, 1);
-  const row = data.result[0];
-  assert.equal(row.email, who.email);
-  assert.equal(row.is_active_patron, true);
-  assert.equal(row.pledge_amount, 5);
-  assert.equal(row.membership_tier, "Pro");
-  assert.equal(row.access_token_enc, undefined, "no tokens in the list");
-
-  const revoke = await fetch(`${base}/patreon/users/${row.id}/revoke`, { method: "POST", headers: { Cookie: `ss_admin=${token}` } });
-  assert.equal(revoke.status, 200);
-  const after = await linkFor(who.id);
-  assert.equal(after.site_user.access, "blocked", "revoke blocks the account");
-  assert.equal(await isPro(after.site_user_id, { refresh: true }), false, "and Patreon cannot undo it");
 });
 
 test("token encryption: round trip, fresh each time, and tampering is detected", () => {
