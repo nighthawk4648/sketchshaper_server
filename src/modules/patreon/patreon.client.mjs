@@ -53,7 +53,14 @@ export const exchangeCode = (code) =>
 export const refreshTokens = (refreshToken) =>
   tokenRequest("token refresh", { grant_type: "refresh_token", refresh_token: refreshToken });
 
-const tierFor = (cents) => (cents >= 1000 ? "premium" : cents >= 500 ? "standard" : cents > 0 ? "basic" : null);
+// The name of the tier (as set on Patreon) the member is entitled to; the priciest one if several
+function tierTitle(body, member) {
+  const ids = new Set((member?.relationships?.currently_entitled_tiers?.data || []).map((t) => t.id));
+  const tiers = (body?.included || [])
+    .filter((t) => t.type === "tier" && ids.has(t.id) && t.attributes?.title)
+    .sort((a, b) => (b.attributes.amount_cents || 0) - (a.attributes.amount_cents || 0));
+  return tiers[0]?.attributes.title.slice(0, 100) || null;
+}
 
 // Turns Patreon's identity answer into what we need. Only a member of OUR campaign counts as a patron.
 export function parseIdentity(body) {
@@ -76,16 +83,17 @@ export function parseIdentity(body) {
     emailVerified: user?.attributes?.is_email_verified === true,
     isActivePatron: Boolean(active),
     pledgeCents,
-    tier: active ? tierFor(pledgeCents) : null,
+    tier: active ? tierTitle(body, active) : null,
   };
 }
 
 export async function fetchIdentity(accessToken) {
   try {
     const res = await axios.get(
-      `${config.patreon_base_url}/api/oauth2/v2/identity?include=memberships,memberships.campaign` +
+      `${config.patreon_base_url}/api/oauth2/v2/identity?include=memberships,memberships.campaign,memberships.currently_entitled_tiers` +
         "&fields[user]=email,full_name,is_email_verified" +
-        "&fields[member]=patron_status,currently_entitled_amount_cents",
+        "&fields[member]=patron_status,currently_entitled_amount_cents" +
+        "&fields[tier]=title,amount_cents",
       { headers: { Authorization: `Bearer ${accessToken}` }, timeout: TIMEOUT },
     );
     return parseIdentity(res.data);

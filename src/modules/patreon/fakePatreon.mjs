@@ -68,8 +68,14 @@ export async function startFakePatreon(port = 0) {
           ? [{
               type: "member",
               attributes: { patron_status: who.patron.status || "active_patron", currently_entitled_amount_cents: who.patron.cents },
-              relationships: { campaign: { data: { id: who.patron.campaignId } } },
-            }]
+              relationships: {
+                campaign: { data: { id: who.patron.campaignId } },
+                currently_entitled_tiers: { data: who.patron.tier ? [{ type: "tier", id: "t1" }] : [] },
+              },
+            },
+            ...(who.patron.tier
+              ? [{ type: "tier", id: "t1", attributes: { title: who.patron.tier, amount_cents: who.patron.cents } }]
+              : [])]
           : [],
       });
     }

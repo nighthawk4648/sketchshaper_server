@@ -32,7 +32,7 @@ const person = (over = {}) => {
   counter += 1;
   return { id: `pt-${stamp}-${counter}`, email: mail(counter), name: "Pat Ron", verified: true, patron: null, ...over };
 };
-const patron = (cents = 500, campaignId = CAMPAIGN) => ({ campaignId, cents, status: "active_patron" });
+const patron = (cents = 500, campaignId = CAMPAIGN, tier = "Pro") => ({ campaignId, cents, status: "active_patron", tier });
 
 const app = express();
 app.use(express.json());
@@ -107,9 +107,11 @@ test("patrons of our campaign are PRO; a patron of someone else's campaign is no
   const a = await browserLogin(ours);
   const b = await browserLogin(theirs);
   assert.equal((await me(a.session)).isPro, true);
+  assert.equal((await me(a.session)).membershipTier, "Pro");
   assert.equal((await me(b.session)).isPro, false);
+  assert.equal((await me(b.session)).membershipTier, null);
   const link = await linkFor(ours.id);
-  assert.equal(link.membership_tier, "premium");
+  assert.equal(link.membership_tier, "Pro");
   assert.equal(link.pledge_amount_cents, 1200);
 });
 
@@ -305,7 +307,7 @@ test("the admin list shows connected Patreon users in the shape the dashboard ex
   assert.equal(row.email, who.email);
   assert.equal(row.is_active_patron, true);
   assert.equal(row.pledge_amount, 5);
-  assert.equal(row.membership_tier, "standard");
+  assert.equal(row.membership_tier, "Pro");
   assert.equal(row.access_token_enc, undefined, "no tokens in the list");
 
   const revoke = await fetch(`${base}/patreon/users/${row.id}/revoke`, { method: "POST", headers: { Cookie: `ss_admin=${token}` } });
@@ -334,7 +336,7 @@ test("importing old Patreon users keeps their account, tokens (now encrypted) an
       token_expires_at: new Date(Date.now() + 86400_000),
       is_active_patron: true,
       pledge_amount_cents: 700,
-      membership_tier: "standard",
+      membership_tier: "Pro",
     },
   });
   const run1 = await importLegacyUsers();

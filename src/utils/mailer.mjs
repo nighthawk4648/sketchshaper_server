@@ -5,8 +5,10 @@ import { config } from "../config/config.mjs";
 export const devOutbox = [];
 
 export async function sendMail({ to, subject, text, html }) {
-  if (!config.brevo_api_key) {
-    if (config.mode !== "dev") {
+  // Tests (node --test) must never send real mail, even when a real key is in .env
+  const underTest = Boolean(process.env.NODE_TEST_CONTEXT);
+  if (!config.brevo_api_key || underTest) {
+    if (config.mode !== "dev" && !underTest) {
       throw new Error("BREVO_API_KEY is not set, so no email can be sent");
     }
     devOutbox.push({ to, subject, text });

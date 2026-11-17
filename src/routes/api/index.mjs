@@ -14,6 +14,7 @@ import blogsRouter from "./blog.route.mjs";
 import galleryRouter from "./gallery.route.mjs";
 import patreonRouter from "./patreon.route.mjs";
 import authRouter from "./auth.route.mjs";
+import googleRouter from "./google.route.mjs";
 import { requireAdminForWrites } from "../../middlewares/auth/requireAdminForWrites.mjs";
 
 import extensionDownloadRouter from "./extension-download.route.mjs";
@@ -44,6 +45,7 @@ indexRouter.use("/supportedBy", requireAdminForWrites, supportedByRouter);
 indexRouter.use("/blogs", requireAdminForWrites, blogsRouter);
 indexRouter.use("/gallery", requireAdminForWrites, galleryRouter);
 indexRouter.use("/auth", authRouter);
+indexRouter.use("/google", googleRouter);
 indexRouter.use("/patreon", patreonRouter);
 
 indexRouter.use("/extension-downloads", extensionDownloadRouter);

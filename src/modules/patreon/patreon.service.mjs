@@ -1,15 +1,8 @@
 import { prisma } from "../../db/prisma.mjs";
 import { decryptToken, encryptToken } from "../../utils/tokenCrypto.mjs";
-import { deleteSiteUserSessions } from "../../utils/session.mjs";
+import { SignInError, resolveAccount } from "../auth/accountLinking.mjs";
 import * as client from "./patreon.client.mjs";
 
-// A sign-in problem the visitor should be told about; `code` becomes /login?error=<code>
-export class PatreonSignInError extends Error {
-  constructor(code) {
-    super(code);
-    this.code = code;
-  }
-}
 
 const tokenFields = (tokens) => ({
   access_token_enc: encryptToken(tokens.access_token),
@@ -27,13 +20,13 @@ const statusFields = (identity) => ({
 // Finds or creates the visitor for this Patreon account and keeps the link, tokens and patron status current.
 // currentUserId is set when someone who is already signed in is connecting Patreon.
 export async function signInWithPatreon({ tokens, identity, currentUserId = null }) {
-  if (!identity.patreonId || !identity.email) throw new PatreonSignInError("patreon_no_email");
+  if (!identity.patreonId || !identity.email) throw new SignInError("patreon_no_email");
 
   try {
     const existing = await prisma.patreonLink.findUnique({ where: { patreon_id: identity.patreonId } });
     if (existing) {
       if (currentUserId && currentUserId !== existing.site_user_id) {
-        throw new PatreonSignInError("patreon_in_use");
+        throw new SignInError("patreon_in_use");
       }
       await prisma.patreonLink.update({
         where: { id: existing.id },
@@ -47,31 +40,13 @@ export async function signInWithPatreon({ tokens, identity, currentUserId = null
       return owner;
     }
 
-    let user;
-    if (currentUserId) {
-      user = await prisma.siteUser.findUnique({ where: { id: currentUserId } });
-    } else {
-      user = await prisma.siteUser.findUnique({ where: { email: identity.email } });
-      // Linking by email is only safe when Patreon vouches for the address
-      if (user && !identity.emailVerified) throw new PatreonSignInError("patreon_email_unverified");
-      if (user && !user.email_verified_at) {
-        // Whoever registered this address never proved they own it, so their password cannot be trusted
-        await prisma.siteUser.update({ where: { id: user.id }, data: { password: null } });
-        await deleteSiteUserSessions(user.id);
-      }
-    }
-
-    if (!user) {
-      user = await prisma.siteUser.create({
-        data: {
-          email: identity.email,
-          name: identity.fullName?.slice(0, 100) || null,
-          email_verified_at: identity.emailVerified ? new Date() : null,
-        },
-      });
-    } else if (!user.email_verified_at && identity.emailVerified && user.email === identity.email) {
-      user = await prisma.siteUser.update({ where: { id: user.id }, data: { email_verified_at: new Date() } });
-    }
+    const user = await resolveAccount({
+      currentUserId,
+      email: identity.email,
+      name: identity.fullName,
+      emailVerified: identity.emailVerified,
+      unverifiedCode: "patreon_email_unverified",
+    });
 
     const data = { patreon_id: identity.patreonId, ...tokenFields(tokens), ...statusFields(identity) };
     await prisma.patreonLink.upsert({
@@ -81,7 +56,7 @@ export async function signInWithPatreon({ tokens, identity, currentUserId = null
     });
     return user;
   } catch (err) {
-    if (err.code === "P2002") throw new PatreonSignInError("patreon_failed"); // two sign-ins raced
+    if (err.code === "P2002") throw new SignInError("patreon_failed"); // two sign-ins raced
     throw err;
   }
 }

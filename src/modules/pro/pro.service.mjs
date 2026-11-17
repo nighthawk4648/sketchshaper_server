@@ -8,7 +8,11 @@ const RECHECK_MS = 60 * 60 * 1000;
 // What the website shows about someone's access, from what we already know (never calls Patreon)
 export async function proStatus(siteUserId) {
   const link = await prisma.patreonLink.findUnique({ where: { site_user_id: siteUserId } });
-  return { isPro: Boolean(link?.is_active_patron), patreonLinked: Boolean(link) };
+  return {
+    isPro: Boolean(link?.is_active_patron),
+    patreonLinked: Boolean(link),
+    membershipTier: link?.is_active_patron ? link.membership_tier : null,
+  };
 }
 
 // Whether this person may download PRO models. With `refresh`, anything older than an hour is checked with Patreon first.
