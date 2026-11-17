@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,7 +6,6 @@ datasource db {
   provider = "mysql"
 }
 
-// Admin accounts (the dashboard). Site visitors will get their own table.
 model User {
   id         Int       @id @default(autoincrement())
   email      String    @unique(map: "email_UNIQUE")
@@ -22,45 +15,44 @@ model User {
   sessions   Session[]
 }
 
-// One row per signed-in browser or device. The cookie holds a random token; only its hash is stored.
 model Session {
   id           Int       @id @default(autoincrement())
   token_hash   String    @unique @db.Char(64)
-  kind         String    @db.VarChar(20) // admin | website | extension: a session only works where its kind is accepted
+  kind         String    @db.VarChar(20)
   admin_id     Int?
-  admin        User?     @relation(fields: [admin_id], references: [id], onDelete: Cascade)
-  site_user_id Int?
-  site_user    SiteUser? @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
   expires_at   DateTime
   created_at   DateTime  @default(now())
   ip           String?   @db.VarChar(45)
   user_agent   String?   @db.VarChar(255)
+  site_user_id Int?
+  admin        User?     @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+  site_user    SiteUser? @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
 
   @@index([admin_id])
   @@index([site_user_id])
   @@index([expires_at])
 }
 
-// Website visitors (the people who download). Admins live in User.
 model SiteUser {
   id                Int          @id @default(autoincrement())
   email             String       @unique @db.VarChar(254)
-  password          String?      @db.VarChar(100) // bcrypt hash; empty for accounts that only use Patreon
+  password          String?      @db.VarChar(100)
   name              String?      @db.VarChar(100)
   email_verified_at DateTime?
-  google_id         String?      @unique @db.VarChar(64) // Google account id (the "sub"), set when they sign in with Google
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
-  sessions          Session[]
+  google_id         String?      @unique @db.VarChar(64)
+  access            SiteAccess   @default(normal)
+  access_note       String?      @db.VarChar(255)
+  access_until      DateTime?
   email_tokens      EmailToken[]
   patreon_link      PatreonLink?
+  sessions          Session[]
 }
 
-// A visitor's connected Patreon account. Tokens are encrypted (see utils/tokenCrypto.mjs).
 model PatreonLink {
   id                  Int      @id @default(autoincrement())
   site_user_id        Int      @unique
-  site_user           SiteUser @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
   patreon_id          String   @unique @db.VarChar(64)
   access_token_enc    String   @db.Text
   refresh_token_enc   String   @db.Text
@@ -71,18 +63,18 @@ model PatreonLink {
   last_verified_at    DateTime @default(now())
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
+  site_user           SiteUser @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
 }
 
-// One-time links sent by email (confirm address, reset password). Only a hash is stored.
 model EmailToken {
   id           Int       @id @default(autoincrement())
   token_hash   String    @unique @db.Char(64)
-  type         String    @db.VarChar(20) // verify | reset
+  type         String    @db.VarChar(20)
   site_user_id Int
-  site_user    SiteUser  @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
   expires_at   DateTime
   used_at      DateTime?
   created_at   DateTime  @default(now())
+  site_user    SiteUser  @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
 
   @@index([site_user_id, type])
 }
@@ -91,19 +83,19 @@ model ContactMessage {
   id              Int      @id @default(autoincrement())
   name            String   @db.VarChar(100)
   email           String   @db.VarChar(254)
-  phone           String?  @db.VarChar(30)
-  service_type    String?  @db.VarChar(30) // architecture | single-model | textures | extension | support
-  service_scope   String?  @db.VarChar(150)
-  custom_scope    String?  @db.VarChar(255) // only when an "Other..." scope is chosen
-  reference_url   String?  @db.VarChar(2048)
-  attachment_file String?  @db.VarChar(255) // stored random filename (never a public URL)
-  attachment_name String?  @db.VarChar(255) // original filename, for display/download
-  attachment_mime String?  @db.VarChar(100)
-  attachment_size Int? // bytes
   message         String   @db.LongText
   status          String   @default("NEW") @db.VarChar(20)
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
+  attachment_file String?  @db.VarChar(255)
+  attachment_mime String?  @db.VarChar(100)
+  attachment_name String?  @db.VarChar(255)
+  attachment_size Int?
+  custom_scope    String?  @db.VarChar(255)
+  phone           String?  @db.VarChar(30)
+  reference_url   String?  @db.VarChar(2048)
+  service_scope   String?  @db.VarChar(150)
+  service_type    String?  @db.VarChar(30)
 
   @@index([status])
   @@index([created_at])
@@ -112,58 +104,59 @@ model ContactMessage {
 
 model Category {
   id                Int           @id @default(autoincrement())
-  slug              String?       @unique
   name              String
   short_description String        @db.LongText
   image             String?
-  sub_categories    SubCategory[]
-  meta_title        String?
-  meta_description  String?       @db.LongText
-  keywords          String?       @db.LongText
   created_at        DateTime      @default(now())
+  meta_description  String?       @db.LongText
+  meta_title        String?
   updated_at        DateTime      @updatedAt
+  keywords          String?       @db.LongText
+  slug              String?       @unique
+  sub_categories    SubCategory[]
 }
 
 model SubCategory {
   id                Int      @id @default(autoincrement())
-  slug              String?
   name              String
   short_description String   @db.LongText
   image             String?
-  category          Category @relation(fields: [category_id], references: [id], onDelete: Cascade)
   category_id       Int
-  assets            Asset[]
-  meta_title        String?
-  meta_description  String?  @db.LongText
-  keywords          String?  @db.LongText
   created_at        DateTime @default(now())
+  meta_description  String?  @db.LongText
+  meta_title        String?
   updated_at        DateTime @updatedAt
+  keywords          String?  @db.LongText
+  slug              String?
+  assets            Asset[]
+  category          Category @relation(fields: [category_id], references: [id], onDelete: Cascade)
+
+  @@index([category_id], map: "SubCategory_category_id_fkey")
 }
 
 model Asset {
-  id                Int          @id @default(autoincrement())
-  slug              String?
+  id                Int             @id @default(autoincrement())
   name              String
   cover             String
-  cover_alt         String?      @db.Text
   resolution        String
   size              String
   download_link     String?
-  short_description String?      @db.LongText
-  sub_category      SubCategory  @relation(fields: [sub_category_id], references: [id], onDelete: Cascade)
+  short_description String?         @db.LongText
   sub_category_id   Int
-  images            AssetImage[]
-  file              AssetFile?
-  access_type       String       @default("free")
+  created_at        DateTime        @default(now())
+  meta_description  String?         @db.LongText
   meta_title        String?
-  meta_description  String?      @db.LongText
-  keywords          String?      @db.LongText
-  created_at        DateTime     @default(now())
-  updated_at        DateTime     @updatedAt
-
-  parent_relations AssetRelation[] @relation("ParentAssetRelations")
-  child_relations  AssetRelation[] @relation("ChildAssetRelations")
-  blog_assets      BlogAsset[]
+  updated_at        DateTime        @updatedAt
+  access_type       String          @default("free")
+  cover_alt         String?         @db.Text
+  keywords          String?         @db.LongText
+  slug              String?
+  sub_category      SubCategory     @relation(fields: [sub_category_id], references: [id], onDelete: Cascade)
+  file              AssetFile?
+  images            AssetImage[]
+  child_relations   AssetRelation[] @relation("ChildAssetRelations")
+  parent_relations  AssetRelation[] @relation("ParentAssetRelations")
+  blog_assets       BlogAsset[]
 
   @@index([access_type])
   @@index([sub_category_id])
@@ -174,9 +167,9 @@ model AssetRelation {
   parent_asset_id Int
   child_asset_id  Int
   position        Int      @default(0)
-  parent_asset    Asset    @relation("ParentAssetRelations", fields: [parent_asset_id], references: [id], onDelete: Cascade)
-  child_asset     Asset    @relation("ChildAssetRelations", fields: [child_asset_id], references: [id], onDelete: Cascade)
   created_at      DateTime @default(now())
+  child_asset     Asset    @relation("ChildAssetRelations", fields: [child_asset_id], references: [id], onDelete: Cascade)
+  parent_asset    Asset    @relation("ParentAssetRelations", fields: [parent_asset_id], references: [id], onDelete: Cascade)
 
   @@unique([parent_asset_id, child_asset_id])
   @@index([parent_asset_id])
@@ -188,9 +181,9 @@ model BlogAsset {
   blog_id    Int
   asset_id   Int
   position   Int      @default(0)
-  blog       Blog     @relation(fields: [blog_id], references: [id], onDelete: Cascade)
-  asset      Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
   created_at DateTime @default(now())
+  asset      Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+  blog       Blog     @relation(fields: [blog_id], references: [id], onDelete: Cascade)
 
   @@unique([blog_id, asset_id])
   @@index([blog_id])
@@ -200,17 +193,18 @@ model BlogAsset {
 model AssetImage {
   id         Int      @id @default(autoincrement())
   image      String
-  alt        String?  @db.Text
   asset_id   Int
-  asset      Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+  alt        String?  @db.Text
+  asset      Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
+
+  @@index([asset_id], map: "AssetImage_asset_id_fkey")
 }
 
 model AssetFile {
   id                Int      @id @default(autoincrement())
   asset_id          Int      @unique
-  asset             Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
   main_file         String   @default("")
   file_type         String   @default("")
   file_size         BigInt   @default(0)
@@ -222,11 +216,10 @@ model AssetFile {
   upload_session_id String?  @unique
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
+  asset             Asset    @relation(fields: [asset_id], references: [id], onDelete: Cascade)
 
   @@index([upload_status])
 }
-
-// Upload status enum values: 'pending', 'uploading', 'completed', 'failed'
 
 model AboutUs {
   id                Int      @id @default(autoincrement())
@@ -261,11 +254,11 @@ model Page {
   cover             String
   short_description String
   content           String   @db.LongText
-  meta_title        String?
-  meta_description  String?  @db.LongText
-  keywords          String?  @db.LongText
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
+  keywords          String?  @db.LongText
+  meta_description  String?  @db.LongText
+  meta_title        String?
 }
 
 model Slider {
@@ -317,27 +310,26 @@ model SupportedBy {
 }
 
 model Blog {
-  id                Int      @id @default(autoincrement())
-  slug              String?  @unique
+  id                Int         @id @default(autoincrement())
   title             String
   name              String
-  short_description String   @db.LongText
-  paragraph_one     String   @db.LongText
-  paragraph_two     String   @db.LongText
-  paragraph_three   String   @db.LongText
+  short_description String      @db.LongText
   image             String
-  image_alt         String?  @db.Text
   bgImage           String
-  bg_image_alt      String?  @db.Text
+  order             Int         @default(0)
+  created_at        DateTime    @default(now())
+  updated_at        DateTime    @updatedAt
   back_link         String
+  paragraph_one     String      @db.LongText
+  paragraph_three   String      @db.LongText
+  paragraph_two     String      @db.LongText
+  image_alt         String?     @db.Text
+  bg_image_alt      String?     @db.Text
+  keywords          String?     @db.LongText
+  meta_description  String?     @db.LongText
   meta_title        String?
-  meta_description  String?  @db.LongText
-  keywords          String?  @db.LongText
-  order             Int      @default(0)
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
-
-  featured_assets BlogAsset[]
+  slug              String?     @unique
+  featured_assets   BlogAsset[]
 }
 
 model Gallery {
@@ -365,10 +357,14 @@ model PatreonUser {
 
 model ExtensionDownload {
   id         Int      @id @default(autoincrement())
-  name       String // Extension name (e.g., "MyExtension", "SketchPlugin")
-  count      Int      @default(0) // Total download count
+  name       String   @unique
+  count      Int      @default(0)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+}
 
-  @@unique([name])
+enum SiteAccess {
+  normal
+  pro
+  blocked
 }

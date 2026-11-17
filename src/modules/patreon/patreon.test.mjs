@@ -312,7 +312,9 @@ test("the admin list shows connected Patreon users in the shape the dashboard ex
 
   const revoke = await fetch(`${base}/patreon/users/${row.id}/revoke`, { method: "POST", headers: { Cookie: `ss_admin=${token}` } });
   assert.equal(revoke.status, 200);
-  assert.equal((await linkFor(who.id)).is_active_patron, false);
+  const after = await linkFor(who.id);
+  assert.equal(after.site_user.access, "blocked", "revoke blocks the account");
+  assert.equal(await isPro(after.site_user_id, { refresh: true }), false, "and Patreon cannot undo it");
 });
 
 test("token encryption: round trip, fresh each time, and tampering is detected", () => {

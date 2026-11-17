@@ -136,8 +136,12 @@ export async function getPatreonUser(id) {
   return adminShape(link);
 }
 
-export const revokeUserAccess = (id) =>
-  prisma.patreonLink.update({ where: { id: parseInt(id) }, data: { is_active_patron: false } });
+// "Revoke" blocks the account, so the next Patreon re-check cannot turn PRO back on (undo it on the Members page)
+export async function revokeUserAccess(id) {
+  const link = await prisma.patreonLink.findUnique({ where: { id: parseInt(id) || 0 } });
+  if (!link) throw Object.assign(new Error("Patreon user not found"), { status: 404 });
+  await prisma.siteUser.update({ where: { id: link.site_user_id }, data: { access: "blocked", access_until: null } });
+}
 
 // One-time: copy people from the old PatreonUser table (Patreon-only sign-ins) into accounts. Safe to run twice.
 export async function importLegacyUsers() {
