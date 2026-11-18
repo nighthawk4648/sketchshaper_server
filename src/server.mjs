@@ -7,6 +7,7 @@ import { config } from "./config/config.mjs";
 import { corsPolicy } from "./middlewares/corsPolicy.mjs";
 import globalErrorHandler from "./middlewares/errors/globalErrorHandler.mjs";
 import indexRouter from "./routes/api/index.mjs";
+import { publicUploads } from "./middlewares/uploads/publicUploads.mjs";
 import { checkRevalidateConfig } from "./utils/revalidate.mjs";
 
 // Fix for BigInt serialization
@@ -44,7 +45,7 @@ app.get("/", (req, res) => {
 
 // Routes
 app.use("/api", indexRouter);
-app.use("/api/uploads", express.static("uploads"));
+app.use("/api/uploads", publicUploads);
 
 // Error Handler
 app.use(globalErrorHandler);
