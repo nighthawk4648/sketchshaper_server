@@ -12,12 +12,122 @@ datasource db {
   provider = "mysql"
 }
 
+// Admin accounts (the dashboard). Site visitors will get their own table.
 model User {
-  id         Int      @id @default(autoincrement())
-  email      String   @unique(map: "email_UNIQUE")
+  id         Int       @id @default(autoincrement())
+  email      String    @unique(map: "email_UNIQUE")
   password   String
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  sessions   Session[]
+}
+
+// One row per signed-in browser or device. The cookie holds a random token; only its hash is stored.
+model Session {
+  id           Int       @id @default(autoincrement())
+  token_hash   String    @unique @db.Char(64)
+  kind         String    @db.VarChar(20) // admin | website | extension: a session only works where its kind is accepted
+  admin_id     Int?
+  admin        User?     @relation(fields: [admin_id], references: [id], onDelete: Cascade)
+  site_user_id Int?
+  site_user    SiteUser? @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
+  expires_at   DateTime
+  created_at   DateTime  @default(now())
+  ip           String?   @db.VarChar(45)
+  user_agent   String?   @db.VarChar(255)
+
+  @@index([admin_id])
+  @@index([site_user_id])
+  @@index([expires_at])
+}
+
+// Website visitors (the people who download). Admins live in User.
+model SiteUser {
+  id                Int          @id @default(autoincrement())
+  email             String       @unique @db.VarChar(254)
+  password          String?      @db.VarChar(100) // bcrypt hash; empty for accounts that only use Patreon
+  name              String?      @db.VarChar(100)
+  email_verified_at DateTime?
+  google_id         String?      @unique @db.VarChar(64) // Google account id (the "sub"), set when they sign in with Google
+  access            SiteAccess   @default(normal) // set by an admin: pro = PRO by hand, blocked = never PRO
+  access_tier       String?      @db.VarChar(100) // Patreon tier name an admin gave with a manual PRO
+  access_until      DateTime? // when a manual PRO ends; empty = no end
+  access_note       String?      @db.VarChar(255)
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+  sessions          Session[]
+  email_tokens      EmailToken[]
+  patreon_link      PatreonLink?
+  manual_payments   ManualPayment[]
+  extension_logins  ExtensionLogin[]
+}
+
+// A SketchUp sign-in waiting for its owner to press Connect on the website. The extension proves it
+// started the attempt with a secret (only its hash is stored); the code is what the person sees.
+model ExtensionLogin {
+  id           Int       @id @default(autoincrement())
+  nonce_hash   String    @unique @db.Char(64)
+  code         String    @unique @db.Char(6)
+  site_user_id Int? // set when the person presses Connect
+  site_user    SiteUser? @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
+  expires_at   DateTime
+  created_at   DateTime  @default(now())
+
+  @@index([expires_at])
+  @@index([site_user_id])
+}
+
+enum SiteAccess {
+  normal
+  pro
+  blocked
+}
+
+// Money a member paid outside Patreon, recorded by an admin. Whole minor units (cents, poisha) so nothing
+// rounds; currencies are never added together. Restrict: an account with payments cannot be deleted by accident.
+model ManualPayment {
+  id           Int      @id @default(autoincrement())
+  site_user_id Int
+  site_user    SiteUser @relation(fields: [site_user_id], references: [id], onDelete: Restrict)
+  amount_minor Int
+  currency     String   @db.Char(3) // ISO 4217, e.g. USD, BDT
+  paid_on      DateTime @db.Date
+  note         String?  @db.VarChar(255)
+  added_by     String?  @db.VarChar(254) // admin email at the time
+  created_at   DateTime @default(now())
+
+  @@index([site_user_id])
+}
+
+// A visitor's connected Patreon account. Tokens are encrypted (see utils/tokenCrypto.mjs).
+model PatreonLink {
+  id                  Int      @id @default(autoincrement())
+  site_user_id        Int      @unique
+  site_user           SiteUser @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
+  patreon_id          String   @unique @db.VarChar(64)
+  access_token_enc    String   @db.Text
+  refresh_token_enc   String   @db.Text
+  token_expires_at    DateTime
+  membership_tier     String?  @db.VarChar(100)
+  is_active_patron    Boolean  @default(false)
+  pledge_amount_cents Int      @default(0)
+  last_verified_at    DateTime @default(now())
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}
+
+// One-time links sent by email (confirm address, reset password). Only a hash is stored.
+model EmailToken {
+  id           Int       @id @default(autoincrement())
+  token_hash   String    @unique @db.Char(64)
+  type         String    @db.VarChar(20) // verify | reset
+  site_user_id Int
+  site_user    SiteUser  @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
+  expires_at   DateTime
+  used_at      DateTime?
+  created_at   DateTime  @default(now())
+
+  @@index([site_user_id, type])
 }
 
 model ContactMessage {
@@ -25,14 +135,14 @@ model ContactMessage {
   name            String   @db.VarChar(100)
   email           String   @db.VarChar(254)
   phone           String?  @db.VarChar(30)
-  service_type    String?  @db.VarChar(30)   // architecture | single-model | textures | extension | support
+  service_type    String?  @db.VarChar(30) // architecture | single-model | textures | extension | support
   service_scope   String?  @db.VarChar(150)
-  custom_scope    String?  @db.VarChar(255)  // only when an "Other..." scope is chosen
+  custom_scope    String?  @db.VarChar(255) // only when an "Other..." scope is chosen
   reference_url   String?  @db.VarChar(2048)
-  attachment_file String?  @db.VarChar(255)  // stored random filename (never a public URL)
-  attachment_name String?  @db.VarChar(255)  // original filename, for display/download
+  attachment_file String?  @db.VarChar(255) // stored random filename (never a public URL)
+  attachment_name String?  @db.VarChar(255) // original filename, for display/download
   attachment_mime String?  @db.VarChar(100)
-  attachment_size Int?                       // bytes
+  attachment_size Int? // bytes
   message         String   @db.LongText
   status          String   @default("NEW") @db.VarChar(20)
   created_at      DateTime @default(now())
@@ -94,9 +204,9 @@ model Asset {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
-  parent_relations  AssetRelation[] @relation("ParentAssetRelations")
-  child_relations   AssetRelation[] @relation("ChildAssetRelations")
-  blog_assets       BlogAsset[]
+  parent_relations AssetRelation[] @relation("ParentAssetRelations")
+  child_relations  AssetRelation[] @relation("ChildAssetRelations")
+  blog_assets      BlogAsset[]
 
   @@index([access_type])
   @@index([sub_category_id])
@@ -270,7 +380,7 @@ model Blog {
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 
-  featured_assets   BlogAsset[]
+  featured_assets BlogAsset[]
 }
 
 model Gallery {
@@ -295,8 +405,6 @@ model PatreonUser {
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 }
-
-
 
 model ExtensionDownload {
   id         Int      @id @default(autoincrement())

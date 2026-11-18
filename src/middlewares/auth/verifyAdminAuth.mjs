@@ -1,65 +1,39 @@
-import jwt from 'jsonwebtoken';
 import { config } from '../../config/config.mjs';
-import { prisma } from '../../db/prisma.mjs';
+import { ADMIN_COOKIE, findSession, readCookie } from '../../utils/session.mjs';
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const ADMIN_ORIGINS = ['https://admin.sketchshaper.com'];
+
+// Browsers send Origin on writes; refusing unknown ones stops other sites acting with the admin's cookie
+export const isTrustedAdminOrigin = (origin, mode = config.mode) =>
+	!origin || mode === 'dev' || ADMIN_ORIGINS.includes(origin);
 
 /**
- * Middleware to verify Admin authentication
+ * Admin access comes only from an admin session cookie. Bearer tokens (including
+ * Patreon tokens) are ignored here, so a site login can never act as an admin.
  */
 export const verifyAdminAuth = async (req, res, next) => {
 	try {
-		// Get token from header
-		const authHeader = req.headers.authorization;
-
-		if (!authHeader || !authHeader.startsWith('Bearer ')) {
-			return res.status(401).json({
+		if (!SAFE_METHODS.has(req.method) && !isTrustedAdminOrigin(req.get('origin'))) {
+			return res.status(403).json({
 				status: 'error',
-				code: 401,
-				message: 'No token provided. Admin authentication required.',
+				code: 403,
+				message: 'Request origin not allowed.',
 			});
 		}
 
-		const token = authHeader.split(' ')[1];
-
-		// Verify JWT
-		const decoded = jwt.verify(token, config.jwt_secret);
-
-		// Check if admin exists
-		const admin = await prisma.user.findUnique({
-			where: { id: decoded.id },
-		});
-
-		if (!admin) {
+		const session = await findSession(readCookie(req, ADMIN_COOKIE), 'admin');
+		if (!session?.admin) {
 			return res.status(401).json({
 				status: 'error',
 				code: 401,
-				message: 'Admin not found.',
+				message: 'Please log in as admin.',
 			});
 		}
 
-		// Attach admin to request
-		req.admin = {
-			id: admin.id,
-			email: admin.email,
-		};
-
+		req.admin = { id: session.admin.id, email: session.admin.email };
 		next();
 	} catch (error) {
-		if (error.name === 'JsonWebTokenError') {
-			return res.status(401).json({
-				status: 'error',
-				code: 401,
-				message: 'Invalid token.',
-			});
-		}
-
-		if (error.name === 'TokenExpiredError') {
-			return res.status(401).json({
-				status: 'error',
-				code: 401,
-				message: 'Token expired. Please login again.',
-			});
-		}
-
 		return res.status(500).json({
 			status: 'error',
 			code: 500,

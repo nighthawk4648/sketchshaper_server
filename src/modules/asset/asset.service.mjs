@@ -973,12 +973,13 @@ class AssetService {
       include: { file: true },
     });
 
+    // 404, not 500: a missing model or a model without an uploaded file is not a server fault
     if (!asset) {
-      throw new Error("Asset not found");
+      throw Object.assign(new Error("Asset not found"), { status: 404 });
     }
 
     if (!asset.file || !asset.file.main_file) {
-      throw new Error("No file available for download");
+      throw Object.assign(new Error("No file available for download"), { status: 404 });
     }
 
     // Extract the actual filename from the stored path

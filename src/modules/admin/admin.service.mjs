@@ -1,6 +1,4 @@
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import { config } from '../../config/config.mjs';
 import { prisma } from '../../db/prisma.mjs';
 class AdminService {
 	async createAdmin(payload) {
@@ -13,7 +11,9 @@ class AdminService {
 			data: {
 				email: payload.email,
 				password: hashedPassword,
-			}
+			},
+			// Never send the password hash back
+			select: { id: true, email: true },
 		});
 
 		return user;
@@ -37,23 +37,10 @@ class AdminService {
 			throw new Error('Invalid email or password');
 		}
 
-		// jwt
-
-		const token = jwt.sign(
-			{
-				id: admin.id,
-				email: admin.email,
-			},
-			config.jwt_secret,
-			{
-				expiresIn: '25h',
-			}
-		);
-
+		// The controller turns this into an admin session cookie
 		return {
 			id: admin.id,
 			email: admin.email,
-			token,
 		};
 	}
 

@@ -12,6 +12,16 @@ const {
   PATREON_REDIRECT_URI,
   PATREON_CAMPAIGN_ID,
   FRONTEND_URL,
+  BREVO_API_KEY,
+  MAIL_FROM,
+  MAIL_FROM_NAME,
+  MAIL_REPLY_TO,
+  TOKEN_ENCRYPTION_KEY,
+  PATREON_BASE_URL,
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_REDIRECT_URI,
+  GOOGLE_BASE_URL,
 } = process.env;
 
 export const config = {
@@ -24,4 +34,18 @@ export const config = {
   patreon_redirect_uri: PATREON_REDIRECT_URI,
   patreon_campaign_id: PATREON_CAMPAIGN_ID,
   frontend_url: FRONTEND_URL,
+  brevo_api_key: BREVO_API_KEY,
+  mail_from: MAIL_FROM,
+  mail_from_name: MAIL_FROM_NAME || "Sketch shaper",
+  mail_reply_to: MAIL_REPLY_TO,
+  token_encryption_key: TOKEN_ENCRYPTION_KEY,
+  // Only tests point this at a fake Patreon
+  patreon_base_url: (PATREON_BASE_URL || "https://www.patreon.com").replace(/\/+$/, ""),
+  google_client_id: GOOGLE_CLIENT_ID,
+  google_client_secret: GOOGLE_CLIENT_SECRET,
+  google_redirect_uri: GOOGLE_REDIRECT_URI,
+  // Only tests point this at a fake Google (it then serves /authorize, /token and /userinfo)
+  google_authorize_url: GOOGLE_BASE_URL ? `${GOOGLE_BASE_URL}/authorize` : "https://accounts.google.com/o/oauth2/v2/auth",
+  google_token_url: GOOGLE_BASE_URL ? `${GOOGLE_BASE_URL}/token` : "https://oauth2.googleapis.com/token",
+  google_userinfo_url: GOOGLE_BASE_URL ? `${GOOGLE_BASE_URL}/userinfo` : "https://openidconnect.googleapis.com/v1/userinfo",
 };

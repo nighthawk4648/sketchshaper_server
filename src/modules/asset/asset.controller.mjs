@@ -3,13 +3,17 @@ import responseHandler from "../../utils/responseHandler.mjs";
 import assetService from "./asset.service.mjs";
 import fs from "fs";
 import path from "path";
-import jwt from "jsonwebtoken";
-import { config } from "../../config/config.mjs";
+import { pipeline } from "stream";
 import { prisma } from "../../db/prisma.mjs";
+import { assertProDownload } from "../pro/pro.service.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
 import { notifyGoogleAsset } from "../../utils/googleIndexer.mjs";
 import { getLinkedParentTags } from "../../utils/linkedAssets.mjs";
 import { TAG, assetTags } from "../../utils/cacheTags.mjs";
+
+const ACCESS_TYPES = ["free", "paid"];
+// Empty or missing means "leave as is" (create defaults to free); anything else must be a known type
+const badAccessType = (value) => value !== undefined && value !== "" && !ACCESS_TYPES.includes(value);
 
 const cleanupUploadedFiles = (files) => {
   if (Array.isArray(files)) {
@@ -163,6 +167,15 @@ class AssetController {
       });
     }
 
+    if (badAccessType(req.body.access_type)) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "access_type must be either free or paid",
+      });
+    }
+
     // 2. Validate Sub-Category ID
     const subCategoryId = parseInt(req.body.sub_category_id);
     if (
@@ -287,6 +300,15 @@ class AssetController {
         statusCode: 400,
         status: "error",
         message: "Asset name cannot be empty",
+      });
+    }
+
+    if (badAccessType(access_type)) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({
+        statusCode: 400,
+        status: "error",
+        message: "access_type must be either free or paid",
       });
     }
 
@@ -423,7 +445,7 @@ class AssetController {
       });
     }
 
-    if (!["free", "paid"].includes(access_type)) {
+    if (!ACCESS_TYPES.includes(access_type)) {
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -459,7 +481,7 @@ class AssetController {
       });
     }
 
-    if (!["free", "paid"].includes(access_type)) {
+    if (!ACCESS_TYPES.includes(access_type)) {
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -636,77 +658,8 @@ class AssetController {
 
     const fileInfo = await assetService.downloadAsset(id);
 
-    // Conditional Patreon Gating: If asset is marked as paid, enforce active patron status
-    if (fileInfo.accessType === "paid") {
-      const authHeader = req.headers.authorization;
-      let token = null;
-
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        token = authHeader.split(" ")[1];
-      } else if (req.query.token) {
-        token = req.query.token;
-      }
-
-      if (!token) {
-        return res.status(401).json({
-          status: "error",
-          code: 401,
-          message:
-            "No token provided. Please login with Patreon to download this paid asset.",
-        });
-      }
-
-      try {
-        const decoded = jwt.verify(token, config.jwt_secret);
-        const user = await prisma.patreonUser.findUnique({
-          where: { id: decoded.id },
-        });
-
-        if (!user) {
-          return res.status(401).json({
-            status: "error",
-            code: 401,
-            message: "User not found. Please login with Patreon.",
-          });
-        }
-
-        if (!user.is_active_patron) {
-          return res.status(403).json({
-            status: "error",
-            code: 403,
-            message:
-              "Your Patreon subscription is not active. Please subscribe to unlock paid assets.",
-          });
-        }
-
-        req.user = {
-          id: user.id,
-          patreonId: user.patreon_id,
-          membershipTier: user.membership_tier,
-          isActivePatron: user.is_active_patron,
-        };
-      } catch (authError) {
-        if (authError.name === "JsonWebTokenError") {
-          return res.status(401).json({
-            status: "error",
-            code: 401,
-            message: "Invalid Patreon token.",
-          });
-        }
-        if (authError.name === "TokenExpiredError") {
-          return res.status(401).json({
-            status: "error",
-            code: 401,
-            message: "Token expired. Please login again.",
-          });
-        }
-        return res.status(500).json({
-          status: "error",
-          code: 500,
-          message: "Patreon authentication failed.",
-        });
-      }
-    }
+    // PRO models need a signed-in visitor with PRO access. Anything not plainly free counts as PRO, so a bad value locks.
+    if (fileInfo.accessType !== "free") await assertProDownload(req);
 
     // Construct full file path
     const fullPath = path.join(process.cwd(), "uploads", fileInfo.filePath);
@@ -720,51 +673,34 @@ class AssetController {
       });
     }
 
-    // Get file stats
-    const stat = fs.statSync(fullPath);
-    const fileSize = stat.size;
+    const fileSize = fs.statSync(fullPath).size;
 
-    // Parse range header for resume support
-    const range = req.headers.range;
-
-    if (range) {
-      // Handle range request (resume download)
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunksize = end - start + 1;
-
-      const fileStream = fs.createReadStream(fullPath, { start, end });
-
-      res.setHeader(
-        "Access-Control-Expose-Headers",
-        "Content-Disposition, Content-Length, Content-Type, Content-Range",
-      );
-      res.writeHead(206, {
-        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunksize,
-        "Content-Type": this.getContentType(fileInfo.fileType),
-        "Content-Disposition": `attachment; filename="${fileInfo.fileName}"`,
-      });
-
-      fileStream.pipe(res);
-    } else {
-      // Handle full file download
-      res.setHeader(
-        "Access-Control-Expose-Headers",
-        "Content-Disposition, Content-Length, Content-Type",
-      );
-      res.writeHead(200, {
-        "Content-Length": fileSize,
-        "Content-Type": this.getContentType(fileInfo.fileType),
-        "Content-Disposition": `attachment; filename="${fileInfo.fileName}"`,
-        "Accept-Ranges": "bytes",
-      });
-
-      const fileStream = fs.createReadStream(fullPath);
-      fileStream.pipe(res);
+    // Resume support. Express parses Range: -1 = past the end of the file; -2 = malformed, so the whole file is sent
+    const ranges = req.headers.range ? req.range(fileSize, { combine: true }) : undefined;
+    if (ranges === -1) {
+      res.setHeader("Content-Range", `bytes */${fileSize}`);
+      return res.status(416).end();
     }
+    const part = Array.isArray(ranges) && ranges.type === "bytes" && ranges.length === 1 ? ranges[0] : null;
+    const start = part ? part.start : 0;
+    const end = part ? part.end : fileSize - 1;
+
+    res.attachment(fileInfo.fileName); // Content-Disposition that is valid for names in any language
+    res.setHeader(
+      "Access-Control-Expose-Headers",
+      "Content-Disposition, Content-Length, Content-Type, Content-Range",
+    );
+    res.writeHead(part ? 206 : 200, {
+      "Accept-Ranges": "bytes",
+      "Content-Length": fileSize ? end - start + 1 : 0,
+      "Content-Type": this.getContentType(fileInfo.fileType),
+      ...(part && { "Content-Range": `bytes ${start}-${end}/${fileSize}` }),
+    });
+
+    // pipeline (unlike pipe) closes the file when a visitor cancels, and ends the response if the file fails
+    pipeline(fs.createReadStream(fullPath, fileSize ? { start, end } : {}), res, (err) => {
+      if (err && err.code !== "ERR_STREAM_PREMATURE_CLOSE") console.error("Download stream failed:", err.message);
+    });
   });
 }
 

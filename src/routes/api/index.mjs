@@ -13,10 +13,13 @@ import supportedByRouter from "./supported.by.route.mjs";
 import blogsRouter from "./blog.route.mjs";
 import galleryRouter from "./gallery.route.mjs";
 import patreonRouter from "./patreon.route.mjs";
-import protectedRouter from "./protected.route.mjs";
+import authRouter from "./auth.route.mjs";
+import googleRouter from "./google.route.mjs";
+import membersRouter from "./members.route.mjs";
 import { requireAdminForWrites } from "../../middlewares/auth/requireAdminForWrites.mjs";
 
 import extensionDownloadRouter from "./extension-download.route.mjs";
+import extensionRouter from "./extension.route.mjs";
 import contactRouter from "./contact.route.mjs";
 
 const indexRouter = Router();
@@ -43,10 +46,13 @@ indexRouter.use("/innovative", requireAdminForWrites, innovativeFurnituresRouter
 indexRouter.use("/supportedBy", requireAdminForWrites, supportedByRouter);
 indexRouter.use("/blogs", requireAdminForWrites, blogsRouter);
 indexRouter.use("/gallery", requireAdminForWrites, galleryRouter);
+indexRouter.use("/auth", authRouter);
+indexRouter.use("/google", googleRouter);
 indexRouter.use("/patreon", patreonRouter);
-indexRouter.use("/protected", protectedRouter);
+indexRouter.use("/members", membersRouter);
 
 indexRouter.use("/extension-downloads", extensionDownloadRouter);
+indexRouter.use("/extension", extensionRouter);
 indexRouter.use("/contact", contactRouter);
 
 export default indexRouter;

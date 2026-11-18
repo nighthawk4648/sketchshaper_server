@@ -1,441 +1,117 @@
-import axios from "axios";
-import jwt from "jsonwebtoken";
-import { config } from "../../config/config.mjs";
 import { prisma } from "../../db/prisma.mjs";
+import { decryptToken, encryptToken } from "../../utils/tokenCrypto.mjs";
+import { SignInError, resolveAccount } from "../auth/accountLinking.mjs";
+import * as client from "./patreon.client.mjs";
 
-class PatreonService {
-  /**
-   * Generate Patreon OAuth URL
-   */
-  getAuthUrl(intent = "login", returnUrl = "") {
-    const clientId = config.patreon_client_id;
-    const redirectUri = config.patreon_redirect_uri;
-    const scope = "identity identity[email] identity.memberships";
 
-    // Encode intent and returnUrl into state
-    const stateObj = {
-      intent: intent === "subscribe" ? "subscribe" : "login",
-      returnUrl: returnUrl || "",
-    };
-    const state = Buffer.from(JSON.stringify(stateObj)).toString("base64");
+const tokenFields = (tokens) => ({
+  access_token_enc: encryptToken(tokens.access_token),
+  refresh_token_enc: encryptToken(tokens.refresh_token),
+  token_expires_at: new Date(Date.now() + (tokens.expires_in || 0) * 1000),
+});
 
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      scope: scope,
-      state: state,
-    });
+const statusFields = (identity) => ({
+  is_active_patron: identity.isActivePatron,
+  pledge_amount_cents: identity.pledgeCents,
+  membership_tier: identity.tier,
+  last_verified_at: new Date(),
+});
 
-    if (intent === "subscribe" && config.patreon_campaign_id) {
-      params.set("campaign_id", config.patreon_campaign_id);
-    }
+// Finds or creates the visitor for this Patreon account and keeps the link, tokens and patron status current.
+// currentUserId is set when someone who is already signed in is connecting Patreon.
+export async function signInWithPatreon({ tokens, identity, currentUserId = null }) {
+  if (!identity.patreonId || !identity.email) throw new SignInError("patreon_no_email");
 
-    return `https://www.patreon.com/oauth2/authorize?${params.toString()}`;
-  }
-
-  /**
-   * Exchange authorization code for access token
-   */
-  async exchangeCodeForToken(code) {
-    try {
-      const body = new URLSearchParams();
-      body.set("code", code);
-      body.set("grant_type", "authorization_code");
-      body.set("client_id", config.patreon_client_id);
-      body.set("client_secret", config.patreon_client_secret);
-      body.set("redirect_uri", config.patreon_redirect_uri);
-
-      const response = await axios.post(
-        "https://www.patreon.com/api/oauth2/token",
-        body.toString(),
-        {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Accept: "application/json",
-          },
-        },
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error exchanging code for token:");
-      console.error("Status:", error.response?.status);
-      console.error("Status Text:", error.response?.statusText);
-      console.error(
-        "Response Data:",
-        JSON.stringify(error.response?.data, null, 2),
-      );
-      console.error("Error Message:", error.message);
-      console.error("Request Config:", {
-        url: error.config?.url,
-        method: error.config?.method,
-        data: error.config?.data,
-      });
-      throw new Error(
-        `Failed to exchange authorization code: ${error.response?.data?.error || error.message}`,
-      );
-    }
-  }
-
-  /**
-   * Get Patreon user identity
-   */
-  async getPatreonIdentity(accessToken) {
-    try {
-      const url =
-        "https://www.patreon.com/api/oauth2/v2/identity?include=memberships,memberships.campaign" +
-        "&fields[user]=email,full_name" +
-        "&fields[member]=patron_status,currently_entitled_amount_cents,pledge_relationship_start";
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        timeout: 10000, // 10 seconds
-      });
-
-      return response.data;
-    } catch (error) {
-      console.error("❌ Error fetching Patreon identity:");
-      console.error("Status:", error.response?.status);
-      console.error("Status Text:", error.response?.statusText);
-      console.error(
-        "Response Data:",
-        JSON.stringify(error.response?.data, null, 2),
-      );
-      console.error("Error Message:", error.message);
-      console.error("Access Token:", accessToken?.substring(0, 20) + "...");
-      throw new Error("Failed to fetch Patreon user data");
-    }
-  }
-
-  /**
-   * Verify if user is an active patron
-   */
-  async verifyPatronStatus(accessToken) {
-    const identity = await this.getPatreonIdentity(accessToken);
-
-    const user = identity.data;
-    const memberships = identity.included?.filter(
-      (item) => item.type === "member",
-    );
-
-    let isActivePatron = false;
-    let pledgeAmountCents = 0;
-    let membershipTier = null;
-    const requiredCampaignId =
-      config.patreon_campaign_id &&
-      config.patreon_campaign_id !== "your_campaign_id_here"
-        ? config.patreon_campaign_id
-        : null;
-
-    if (memberships && memberships.length > 0) {
-      const activeMembership = memberships.find((m) => {
-        const isActive = m.attributes.patron_status === "active_patron";
-        if (!isActive) return false;
-        if (!requiredCampaignId) return true;
-        const relCampaignId = m.relationships?.campaign?.data?.id;
-        return relCampaignId === requiredCampaignId;
-      });
-
-      if (activeMembership) {
-        isActivePatron = true;
-        pledgeAmountCents =
-          activeMembership.attributes.currently_entitled_amount_cents || 0;
-
-        // Determine tier based on pledge amount
-        if (pledgeAmountCents >= 1000) {
-          membershipTier = "premium";
-        } else if (pledgeAmountCents >= 500) {
-          membershipTier = "standard";
-        } else if (pledgeAmountCents > 0) {
-          membershipTier = "basic";
-        }
+  try {
+    const existing = await prisma.patreonLink.findUnique({ where: { patreon_id: identity.patreonId } });
+    if (existing) {
+      if (currentUserId && currentUserId !== existing.site_user_id) {
+        throw new SignInError("patreon_in_use");
       }
-    }
-
-    return {
-      patreonId: user.id,
-      email: user.attributes.email,
-      fullName: user.attributes.full_name,
-      isActivePatron,
-      pledgeAmountCents,
-      membershipTier,
-    };
-  }
-
-  /**
-   * Handle OAuth callback and create/update user
-   */
-  async handleOAuthCallback(code) {
-    // Exchange code for tokens
-    const tokenData = await this.exchangeCodeForToken(code);
-    const { access_token, refresh_token, expires_in } = tokenData;
-
-    // Get user data and verify patron status
-    const patronData = await this.verifyPatronStatus(access_token);
-
-    const isActive = patronData.isActivePatron;
-
-    // Calculate token expiry
-    const tokenExpiresAt = new Date(Date.now() + expires_in * 1000);
-
-    // Create or update user in database ALWAYS
-    const patreonUser = await prisma.patreonUser.upsert({
-      where: { patreon_id: patronData.patreonId },
-      update: {
-        email: patronData.email,
-        full_name: patronData.fullName,
-        access_token,
-        refresh_token,
-        token_expires_at: tokenExpiresAt,
-        membership_tier: patronData.membershipTier,
-        is_active_patron: isActive,
-        pledge_amount_cents: patronData.pledgeAmountCents || 0,
-        last_verified_at: new Date(),
-      },
-      create: {
-        patreon_id: patronData.patreonId,
-        email: patronData.email,
-        full_name: patronData.fullName,
-        access_token,
-        refresh_token,
-        token_expires_at: tokenExpiresAt,
-        membership_tier: patronData.membershipTier,
-        is_active_patron: isActive,
-        pledge_amount_cents: patronData.pledgeAmountCents || 0,
-      },
-    });
-
-    // Generate JWT for our application
-    const appToken = jwt.sign(
-      {
-        id: patreonUser.id,
-        patreonId: patreonUser.patreon_id,
-        email: patreonUser.email,
-        membershipTier: patreonUser.membership_tier,
-        isActivePatron: patreonUser.is_active_patron,
-      },
-      config.jwt_secret,
-      {
-        expiresIn: "7d",
-      },
-    );
-
-    return {
-      user: {
-        id: patreonUser.id,
-        email: patreonUser.email,
-        fullName: patreonUser.full_name,
-        membershipTier: patreonUser.membership_tier,
-        isActivePatron: patreonUser.is_active_patron,
-        pledgeAmount: (patreonUser.pledge_amount_cents || 0) / 100, // Convert to dollars
-      },
-      token: appToken,
-    };
-  }
-
-  /**
-   * Refresh Patreon access token
-   */
-  async refreshAccessToken(refreshToken) {
-    try {
-      const body = new URLSearchParams();
-      body.set("grant_type", "refresh_token");
-      body.set("refresh_token", refreshToken);
-      body.set("client_id", config.patreon_client_id);
-      body.set("client_secret", config.patreon_client_secret);
-
-      const response = await axios.post(
-        "https://www.patreon.com/api/oauth2/token",
-        body.toString(),
-        {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-        },
-      );
-
-      return response.data;
-    } catch (error) {
-      console.error("Error refreshing token:", error.response?.data);
-      throw new Error("Failed to refresh access token");
-    }
-  }
-
-  /**
-   * Verify user's current patron status
-   */
-  async verifyUserPatronStatus(userId) {
-    const user = await prisma.patreonUser.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Check if token is expired
-    const now = new Date();
-    if (now >= user.token_expires_at) {
-      // Refresh token
-      const tokenData = await this.refreshAccessToken(user.refresh_token);
-      const tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
-
-      // Update tokens
-      await prisma.patreonUser.update({
-        where: { id: userId },
-        data: {
-          access_token: tokenData.access_token,
-          refresh_token: tokenData.refresh_token,
-          token_expires_at: tokenExpiresAt,
-        },
+      await prisma.patreonLink.update({
+        where: { id: existing.id },
+        data: { ...tokenFields(tokens), ...statusFields(identity) },
       });
-
-      // Verify with new token
-      const patronData = await this.verifyPatronStatus(tokenData.access_token);
-
-      // Update patron status
-      await prisma.patreonUser.update({
-        where: { id: userId },
-        data: {
-          is_active_patron: patronData.isActivePatron,
-          membership_tier: patronData.membershipTier,
-          pledge_amount_cents: patronData.pledgeAmountCents,
-          last_verified_at: new Date(),
-        },
-      });
-
-      return patronData.isActivePatron;
-    } else {
-      // Token still valid, verify status
-      const patronData = await this.verifyPatronStatus(user.access_token);
-
-      // Update patron status
-      await prisma.patreonUser.update({
-        where: { id: userId },
-        data: {
-          is_active_patron: patronData.isActivePatron,
-          membership_tier: patronData.membershipTier,
-          pledge_amount_cents: patronData.pledgeAmountCents,
-          last_verified_at: new Date(),
-        },
-      });
-
-      return patronData.isActivePatron;
-    }
-  }
-
-  /**
-   * Get all Patreon users with pagination, search, and filtering (for admin)
-   */
-  async getAllPatreonUsers({
-    page = 1,
-    limit = 10,
-    order = "desc",
-    search = "",
-    status = "",
-  } = {}) {
-    const where = {};
-
-    if (search && search.trim()) {
-      const q = search.trim();
-      where.OR = [{ full_name: { contains: q } }, { email: { contains: q } }];
+      const owner = await prisma.siteUser.findUnique({ where: { id: existing.site_user_id } });
+      // e.g. people imported from the old system: confirmed once Patreon vouches for the same address
+      if (!owner.email_verified_at && identity.emailVerified && owner.email === identity.email) {
+        return prisma.siteUser.update({ where: { id: owner.id }, data: { email_verified_at: new Date() } });
+      }
+      return owner;
     }
 
-    if (status === "active") {
-      where.is_active_patron = true;
-    } else if (status === "inactive") {
-      where.is_active_patron = false;
-    }
-
-    const safeLimit = Math.min(Math.max(parseInt(limit) || 10, 1), 1000);
-    const safePage = Math.max(parseInt(page) || 1, 1);
-    const sortOrder = order === "asc" ? "asc" : "desc";
-
-    const [users, total] = await Promise.all([
-      prisma.patreonUser.findMany({
-        where,
-        select: {
-          id: true,
-          patreon_id: true,
-          email: true,
-          full_name: true,
-          membership_tier: true,
-          is_active_patron: true,
-          pledge_amount_cents: true,
-          last_verified_at: true,
-          created_at: true,
-        },
-        orderBy: {
-          created_at: sortOrder,
-        },
-        skip: (safePage - 1) * safeLimit,
-        take: safeLimit,
-      }),
-      prisma.patreonUser.count({ where }),
-    ]);
-
-    const result = users.map((user) => ({
-      ...user,
-      pledge_amount: user.pledge_amount_cents
-        ? user.pledge_amount_cents / 100
-        : 0,
-    }));
-
-    return {
-      result,
-      pagination: {
-        total,
-        totalPages: Math.ceil(total / safeLimit) || 1,
-        currentPage: safePage,
-        limit: safeLimit,
-      },
-    };
-  }
-
-  /**
-   * Get single Patreon user
-   */
-  async getPatreonUser(userId) {
-    const user = await prisma.patreonUser.findUnique({
-      where: { id: parseInt(userId) },
-      select: {
-        id: true,
-        patreon_id: true,
-        email: true,
-        full_name: true,
-        membership_tier: true,
-        is_active_patron: true,
-        pledge_amount_cents: true,
-        last_verified_at: true,
-        created_at: true,
-        updated_at: true,
-      },
+    const user = await resolveAccount({
+      currentUserId,
+      email: identity.email,
+      name: identity.fullName,
+      emailVerified: identity.emailVerified,
+      unverifiedCode: "patreon_email_unverified",
     });
 
-    if (!user) {
-      throw new Error("Patreon user not found");
-    }
-
-    return {
-      ...user,
-      pledge_amount: user.pledge_amount_cents
-        ? user.pledge_amount_cents / 100
-        : 0,
-    };
-  }
-
-  /**
-   * Revoke user access (for admin)
-   */
-  async revokeUserAccess(userId) {
-    await prisma.patreonUser.update({
-      where: { id: parseInt(userId) },
-      data: {
-        is_active_patron: false,
-      },
+    const data = { patreon_id: identity.patreonId, ...tokenFields(tokens), ...statusFields(identity) };
+    await prisma.patreonLink.upsert({
+      where: { site_user_id: user.id },
+      create: { site_user_id: user.id, ...data },
+      update: data,
     });
+    return user;
+  } catch (err) {
+    if (err.code === "P2002") throw new SignInError("patreon_failed"); // two sign-ins raced
+    throw err;
   }
 }
 
-export default new PatreonService();
+// Asks Patreon again about this person. If Patreon rejects our access they are no longer a patron;
+// if Patreon is just unreachable we keep the last known state.
+export async function refreshLinkStatus(link) {
+  try {
+    let access = decryptToken(link.access_token_enc);
+    let renewed = {};
+    if (link.token_expires_at <= new Date()) {
+      const tokens = await client.refreshTokens(decryptToken(link.refresh_token_enc));
+      access = tokens.access_token;
+      renewed = tokenFields(tokens);
+    }
+    const identity = await client.fetchIdentity(access);
+    return await prisma.patreonLink.update({ where: { id: link.id }, data: { ...renewed, ...statusFields(identity) } });
+  } catch (err) {
+    if (err.authFailed) {
+      return prisma.patreonLink.update({
+        where: { id: link.id },
+        data: { is_active_patron: false, pledge_amount_cents: 0, membership_tier: null, last_verified_at: new Date() },
+      });
+    }
+    console.error("Could not refresh Patreon status:", err.message);
+    return link;
+  }
+}
+
+// One-time: copy people from the old PatreonUser table (Patreon-only sign-ins) into accounts. Safe to run twice.
+export async function importLegacyUsers() {
+  const legacy = await prisma.patreonUser.findMany();
+  let imported = 0;
+  for (const old of legacy) {
+    const email = old.email.trim().toLowerCase();
+    if (await prisma.patreonLink.findUnique({ where: { patreon_id: old.patreon_id } })) continue;
+    // Patreon never told us whether this address was verified, so it stays unconfirmed until they sign in again
+    const user =
+      (await prisma.siteUser.findUnique({ where: { email } })) ||
+      (await prisma.siteUser.create({ data: { email, name: old.full_name?.slice(0, 100) || null } }));
+    if (await prisma.patreonLink.findUnique({ where: { site_user_id: user.id } })) continue;
+    await prisma.patreonLink.create({
+      data: {
+        site_user_id: user.id,
+        patreon_id: old.patreon_id,
+        access_token_enc: encryptToken(old.access_token),
+        refresh_token_enc: encryptToken(old.refresh_token),
+        token_expires_at: old.token_expires_at,
+        membership_tier: old.membership_tier,
+        is_active_patron: old.is_active_patron,
+        pledge_amount_cents: old.pledge_amount_cents || 0,
+        last_verified_at: old.last_verified_at,
+      },
+    });
+    imported += 1;
+  }
+  return { found: legacy.length, imported };
+}
