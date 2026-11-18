@@ -1,5 +1,5 @@
 import { prisma } from "../../db/prisma.mjs";
-import { SITE_COOKIE, findSession, readCookie } from "../../utils/session.mjs";
+import { SITE_COOKIE, findSession, readBearer, readCookie } from "../../utils/session.mjs";
 import { AuthError } from "../auth/auth.service.mjs";
 import { refreshLinkStatus } from "../patreon/patreon.service.mjs";
 
@@ -32,7 +32,7 @@ export async function proStatus(siteUserId) {
 
 // Whether this person may download PRO models. With `refresh`, a Patreon status older than an hour is checked
 // with Patreon first. A blocked or manual PRO account never needs Patreon, so it is decided before that.
-export async function isPro(siteUserId, { refresh = false } = {}) {
+export async function isPro(siteUserId, { refresh = false, maxAgeMs = RECHECK_MS } = {}) {
   const user = await prisma.siteUser.findUnique({ where: { id: siteUserId }, include: { patreon_link: true } });
   if (!user) return false;
   const decided = accessOf(user, user.patreon_link);
@@ -40,7 +40,7 @@ export async function isPro(siteUserId, { refresh = false } = {}) {
 
   let link = user.patreon_link;
   if (!link) return false;
-  if (refresh && Date.now() - link.last_verified_at.getTime() > RECHECK_MS) {
+  if (refresh && Date.now() - link.last_verified_at.getTime() > maxAgeMs) {
     link = await refreshLinkStatus(link);
   }
   return link.is_active_patron;
@@ -48,7 +48,11 @@ export async function isPro(siteUserId, { refresh = false } = {}) {
 
 // Used by the download route for PRO models: throws a 401 (not signed in) or 403 (not PRO)
 export async function assertProDownload(req) {
-  const session = await findSession(readCookie(req, SITE_COOKIE), "website");
+  // The website proves who is asking with its cookie, the SketchUp extension with its own key
+  const bearer = readBearer(req);
+  const session = bearer
+    ? await findSession(bearer, "extension")
+    : await findSession(readCookie(req, SITE_COOKIE), "website");
   if (!session?.site_user) throw new AuthError("Please sign in to download PRO models.", 401);
   if (!(await isPro(session.site_user.id, { refresh: true }))) {
     throw new AuthError("PRO access is required to download this model.", 403);

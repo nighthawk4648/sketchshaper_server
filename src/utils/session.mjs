@@ -29,6 +29,9 @@ export function readCookie(req, name) {
   return null;
 }
 
+// The key the SketchUp extension sends instead of a cookie
+export const readBearer = (req) => /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization || "")?.[1] || null;
+
 export async function createSession({ kind, adminId = null, siteUserId = null, ttlMs }, req) {
   const token = crypto.randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + ttlMs);

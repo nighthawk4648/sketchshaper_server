@@ -19,6 +19,7 @@ import membersRouter from "./members.route.mjs";
 import { requireAdminForWrites } from "../../middlewares/auth/requireAdminForWrites.mjs";
 
 import extensionDownloadRouter from "./extension-download.route.mjs";
+import extensionRouter from "./extension.route.mjs";
 import contactRouter from "./contact.route.mjs";
 
 const indexRouter = Router();
@@ -51,6 +52,7 @@ indexRouter.use("/patreon", patreonRouter);
 indexRouter.use("/members", membersRouter);
 
 indexRouter.use("/extension-downloads", extensionDownloadRouter);
+indexRouter.use("/extension", extensionRouter);
 indexRouter.use("/contact", contactRouter);
 
 export default indexRouter;

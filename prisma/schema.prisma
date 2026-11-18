@@ -59,6 +59,22 @@ model SiteUser {
   email_tokens      EmailToken[]
   patreon_link      PatreonLink?
   manual_payments   ManualPayment[]
+  extension_logins  ExtensionLogin[]
+}
+
+// A SketchUp sign-in waiting for its owner to press Connect on the website. The extension proves it
+// started the attempt with a secret (only its hash is stored); the code is what the person sees.
+model ExtensionLogin {
+  id           Int       @id @default(autoincrement())
+  nonce_hash   String    @unique @db.Char(64)
+  code         String    @unique @db.Char(6)
+  site_user_id Int? // set when the person presses Connect
+  site_user    SiteUser? @relation(fields: [site_user_id], references: [id], onDelete: Cascade)
+  expires_at   DateTime
+  created_at   DateTime  @default(now())
+
+  @@index([expires_at])
+  @@index([site_user_id])
 }
 
 enum SiteAccess {
