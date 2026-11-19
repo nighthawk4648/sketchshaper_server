@@ -136,3 +136,18 @@ test("saving a model with an unknown access type is refused", async () => {
   assert.equal(edit.status, 400);
   assert.equal((await prisma.asset.findUnique({ where: { id: pro.id } })).access_type, "paid", "unchanged");
 });
+
+test("the extension's slim library has the same values as the full list, without the heavy parts", async () => {
+  const slim = (await (await fetch(`${base}/library`)).json()).data;
+  const full = (await (await fetch(`${base}/pages?limit=5000&sub_category_id=${sub.id}`)).json()).data.result;
+  const keys = ["id", "name", "cover", "cover_alt", "size", "keywords", "access_type", "sub_category_id"];
+  for (const a of full) {
+    const s = slim.find((x) => x.id === a.id);
+    for (const k of keys) assert.deepEqual(s[k], a[k], k);
+    // the download folder name comes from file.updated_at, so it must match exactly
+    assert.deepEqual(s.file, { file_size: a.file.file_size, updated_at: a.file.updated_at });
+    assert.equal(s.images, undefined);
+    assert.equal(s.sub_category, undefined);
+  }
+  assert.ok(slim.every((x, i) => i === 0 || slim[i - 1].id > x.id), "newest first");
+});

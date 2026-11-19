@@ -744,6 +744,28 @@ class AssetService {
     });
   }
 
+  // The SketchUp extension's library: only the fields its cards, search and downloads read.
+  // ~27 KB compressed instead of ~332 KB for /pages?limit=5000 (which adds every image row and category).
+  async getLibraryAssets() {
+    const assets = await prisma.asset.findMany({
+      select: {
+        id: true,
+        name: true,
+        cover: true,
+        cover_alt: true,
+        size: true,
+        keywords: true,
+        access_type: true,
+        sub_category_id: true,
+        file: { select: { file_size: true, updated_at: true } },
+      },
+      orderBy: { id: "desc" },
+    });
+    // Same conversions as /pages, so the extension sees identical values (its download folders
+    // are named after file.updated_at, and a changed format would re-download everything).
+    return this.normalizeAssetSize(convertBigIntToString(assets));
+  }
+
   /**
    * Lightweight search used by the admin "linked assets" picker.
    * Returns only the fields a selector chip needs.

@@ -21,6 +21,9 @@ assetRouter.get("/pages", assetController.getAssetsByPagination);
 // Slim list for the website sitemap (must come before /:id)
 assetRouter.get("/sitemap", assetController.getSitemapAssets);
 
+// Slim list for the SketchUp extension's library (must come before /:id)
+assetRouter.get("/library", assetController.getLibraryAssets);
+
 // Lightweight search for the admin linked-assets picker (must come before /:id)
 assetRouter.get("/search-lite", assetController.searchLite);
 
