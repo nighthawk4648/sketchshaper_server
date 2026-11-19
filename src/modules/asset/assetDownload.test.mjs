@@ -145,7 +145,7 @@ test("the extension's slim library has the same values as the full list, without
     const s = slim.find((x) => x.id === a.id);
     for (const k of keys) assert.deepEqual(s[k], a[k], k);
     // the download folder name comes from file.updated_at, so it must match exactly
-    assert.deepEqual(s.file, { file_size: a.file.file_size, updated_at: a.file.updated_at });
+    assert.deepEqual(s.file, a.file && { file_size: a.file.file_size, updated_at: a.file.updated_at });
     assert.equal(s.images, undefined);
     assert.equal(s.sub_category, undefined);
   }
