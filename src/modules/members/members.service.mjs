@@ -62,7 +62,7 @@ export async function listMembers({ page = 1, limit = 20, search = "", filter = 
   const q = String(search || "").trim();
   if (q) where.AND = [{ OR: [{ name: { contains: q } }, { email: { contains: q } }] }];
 
-  const take = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+  const take = Math.min(Math.max(parseInt(limit) || 20, 1), 10000); // 10000 = the admin's "View All"
   const safePage = Math.max(parseInt(page) || 1, 1);
   const [users, total] = await Promise.all([
     prisma.siteUser.findMany({

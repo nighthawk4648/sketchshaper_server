@@ -90,6 +90,14 @@ test("the list shows every kind of account, how they sign in and where PRO comes
   assert.doesNotMatch(raw, /password|token_enc|"hash"/);
 });
 
+test("the page size can be large (View All) but not unlimited, and a page holds only its share", async () => {
+  assert.equal((await list("limit=5000")).pagination.limit, 5000);
+  assert.equal((await list("limit=999999")).pagination.limit, 10000);
+  const second = await list("limit=2&page=2");
+  assert.equal(second.result.length, 1);
+  assert.equal(second.pagination.totalPages, 2);
+});
+
 test("filters: pro, free, patreon", async () => {
   assert.deepEqual(emailsOf(await list("filter=pro")), [mail("patron")]);
   assert.deepEqual(emailsOf(await list("filter=free")), [mail("google"), mail("plain")]);

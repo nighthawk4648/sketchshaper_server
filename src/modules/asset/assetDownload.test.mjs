@@ -151,3 +151,45 @@ test("the extension's slim library has the same values as the full list, without
   }
   assert.ok(slim.every((x, i) => i === 0 || slim[i - 1].id > x.id), "newest first");
 });
+
+const countOf = async (id) => (await prisma.asset.findUnique({ where: { id } })).download_count;
+
+test("a download adds one to the count; resumed pieces, HEAD checks and refused requests add nothing", async () => {
+  const model = await makeAsset("counted", "paid", fileOf(`dl-${stamp}-counted.skp`));
+  const before = await prisma.asset.findUnique({ where: { id: model.id } });
+  assert.equal(before.download_count, 0);
+
+  await (await download(model.id, { Cookie: proCookie })).arrayBuffer();
+  assert.equal(await countOf(model.id), 1);
+
+  await (await download(model.id, { Cookie: proCookie, Range: "bytes=0-9" })).arrayBuffer();
+  assert.equal(await countOf(model.id), 2, "the first piece of a resumed download is the download");
+
+  await (await download(model.id, { Cookie: proCookie, Range: "bytes=10-" })).arrayBuffer();
+  await fetch(`${base}/${model.id}/download`, { method: "HEAD", headers: { Cookie: proCookie } });
+  await download(model.id); // PRO model, no account: refused
+  await download(model.id, { Cookie: proCookie, Range: "bytes=500-600" }); // 416
+  assert.equal(await countOf(model.id), 2);
+
+  const after = await prisma.asset.findUnique({ where: { id: model.id } });
+  assert.deepEqual(after.updated_at, before.updated_at, "counting a download is not an edit");
+});
+
+test("sorting by downloads covers the whole list, and equal counts keep a stable order across pages", async () => {
+  await prisma.asset.update({ where: { id: free.id }, data: { download_count: 7 } });
+  await prisma.asset.updateMany({ where: { id: { in: [pro.id, odd.id, vanished.id] } }, data: { download_count: 3 } });
+  const get = async (order, query) =>
+    (await (await fetch(`${base}/pages?sub_category_id=${sub.id}&sort_by=download_count&order=${order}&${query}`)).json()).data.result;
+
+  const all = await get("desc", "limit=5000");
+  assert.equal(all[0].id, free.id);
+  assert.ok(all.every((a, i) => i === 0 || a.download_count < all[i - 1].download_count || (a.download_count === all[i - 1].download_count && a.id < all[i - 1].id)));
+
+  const paged = [];
+  for (let p = 1; p <= Math.ceil(all.length / 2); p++) paged.push(...(await get("desc", `limit=2&page=${p}`)));
+  assert.deepEqual(paged.map((a) => a.id), all.map((a) => a.id));
+
+  const asc = await get("asc", "limit=5000");
+  assert.ok(asc.every((a, i) => i === 0 || a.download_count >= asc[i - 1].download_count));
+  assert.equal(asc.at(-1).id, free.id);
+});

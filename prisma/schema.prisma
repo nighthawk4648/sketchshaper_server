@@ -198,6 +198,7 @@ model Asset {
   images            AssetImage[]
   file              AssetFile?
   access_type       String       @default("free")
+  download_count    Int          @default(0)
   meta_title        String?
   meta_description  String?      @db.LongText
   keywords          String?      @db.LongText

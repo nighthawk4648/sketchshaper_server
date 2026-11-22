@@ -835,7 +835,10 @@ class AssetService {
       id: order === "asc" ? "asc" : "desc",
     };
 
-    if (sort_by === "sub_category" || sort_by === "sub_category_name") {
+    if (sort_by === "download_count") {
+      // id breaks ties so assets don't repeat or vanish between pages
+      orderBy = [{ download_count: order === "asc" ? "asc" : "desc" }, { id: "desc" }];
+    } else if (sort_by === "sub_category" || sort_by === "sub_category_name") {
       orderBy = {
         sub_category: {
           name: order === "asc" ? "asc" : "desc",
@@ -984,6 +987,11 @@ class AssetService {
     await prisma.asset.delete({
       where: { id: assetId },
     });
+  }
+
+  // Raw SQL so the add is atomic and, unlike prisma.update, leaves updated_at alone
+  countDownload(id) {
+    return prisma.$executeRaw`UPDATE Asset SET download_count = download_count + 1 WHERE id = ${id}`;
   }
 
   /**

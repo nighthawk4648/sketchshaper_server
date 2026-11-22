@@ -690,6 +690,11 @@ class AssetController {
     const start = part ? part.start : 0;
     const end = part ? part.end : fileSize - 1;
 
+    // One download = one count: not HEAD checks, not the later pieces of a resumed download
+    if (req.method === "GET" && start === 0) {
+      await assetService.countDownload(fileInfo.assetId).catch((err) => console.error("Download count failed:", err.message));
+    }
+
     res.attachment(fileInfo.fileName); // Content-Disposition that is valid for names in any language
     res.setHeader(
       "Access-Control-Expose-Headers",
