@@ -193,3 +193,84 @@ test("sorting by downloads covers the whole list, and equal counts keep a stable
   assert.ok(asc.every((a, i) => i === 0 || a.download_count >= asc[i - 1].download_count));
   assert.equal(asc.at(-1).id, free.id);
 });
+
+// ---- image updates: what the admin's Save sends for a replaced cover or gallery photo ----
+const uploadsRoot = path.join(process.cwd(), "uploads");
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAZ1Wl3QAAAABJRU5ErkJggg==", "base64");
+const stage = (name) => {
+  fs.writeFileSync(path.join(uploadsRoot, name), png);
+  return name;
+};
+const onDisk = (name) => fs.existsSync(path.join(uploadsRoot, name));
+const rawAsset = (name, cover, images = []) =>
+  prisma.asset.create({
+    data: { name, cover, resolution: "x", size: "x", sub_category_id: sub.id, images: { create: images } },
+    include: { images: true },
+  });
+const save = (id, fields, files = []) => {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  for (const [field, name] of files) form.append(field, new Blob([png], { type: "image/png" }), name);
+  return fetch(`${base}/${id}`, { method: "PUT", body: form });
+};
+test.after(() => {
+  for (const f of fs.readdirSync(uploadsRoot).filter((n) => n.startsWith(`cv-${stamp}-`))) fs.unlinkSync(path.join(uploadsRoot, f));
+});
+
+test("replacing the cover deletes the old file; no new cover, or a file another asset still uses, deletes nothing", async () => {
+  const oldCover = stage(`cv-${stamp}-old.png`);
+  const shared = stage(`cv-${stamp}-shared.png`);
+  const a = await rawAsset("cover a", oldCover);
+  const b = await rawAsset("cover b", shared);
+  await rawAsset("cover c", shared);
+
+  assert.equal((await save(a.id, { name: "cover a" })).status, 200);
+  assert.ok(onDisk(oldCover), "no new cover sent: old file stays");
+
+  assert.equal((await save(a.id, { name: "cover a" }, [["cover", `cv-${stamp}-new.png`]])).status, 200);
+  const { cover } = await prisma.asset.findUnique({ where: { id: a.id } });
+  assert.notEqual(cover, oldCover);
+  assert.ok(onDisk(cover), "new cover is saved");
+  assert.equal(onDisk(oldCover), false, "old cover is gone");
+
+  assert.equal((await save(b.id, { name: "cover b" }, [["cover", `cv-${stamp}-new2.png`]])).status, 200);
+  assert.ok(onDisk(shared), "another asset still uses this file");
+});
+
+test("a replaced gallery photo (new file + old one on the removal list) leaves one image; X alone removes it for good", async () => {
+  const keep = stage(`cv-${stamp}-keep.png`);
+  const drop = stage(`cv-${stamp}-drop.png`);
+  const g = await rawAsset("gallery", "x.jpg", [{ image: keep, alt: "keep alt" }, { image: drop, alt: "drop alt" }]);
+  const rowOf = (img) => g.images.find((i) => i.image === img);
+  const rows = () => prisma.assetImage.findMany({ where: { asset_id: g.id }, orderBy: { id: "asc" } });
+
+  // X on one image
+  const x = await save(g.id, {
+    name: "gallery",
+    newImageAlts: "[]",
+    existingImageAlts: JSON.stringify([{ id: rowOf(keep).id, alt: "keep alt" }]),
+    "removedImageIds[0]": String(rowOf(drop).id),
+  });
+  assert.equal(x.status, 200);
+  assert.deepEqual((await rows()).map((r) => r.image), [keep]);
+  assert.equal(onDisk(drop), false, "removed image's file is deleted");
+
+  // Change Photo on the other: new file, and the old image on the removal list
+  const swap = await save(
+    g.id,
+    {
+      name: "gallery",
+      newImageAlts: JSON.stringify([{ tempId: "t1", alt: "keep alt" }]),
+      existingImageAlts: "[]",
+      "removedImageIds[0]": String(rowOf(keep).id),
+    },
+    [["image_t1", `cv-${stamp}-fresh.png`]],
+  );
+  assert.equal(swap.status, 200);
+  const after = await rows();
+  assert.equal(after.length, 1, "one image, not two");
+  assert.notEqual(after[0].image, keep);
+  assert.equal(after[0].alt, "keep alt");
+  assert.equal(onDisk(keep), false);
+  assert.ok(onDisk(after[0].image));
+});

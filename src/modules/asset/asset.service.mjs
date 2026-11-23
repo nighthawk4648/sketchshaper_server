@@ -28,6 +28,20 @@ function convertBigIntToString(obj) {
   return obj;
 }
 
+// A replaced cover file is deleted unless another asset or gallery image still uses it
+async function deleteUnusedUpload(file) {
+  const [asCover, asImage] = await Promise.all([
+    prisma.asset.count({ where: { cover: file } }),
+    prisma.assetImage.count({ where: { image: file } }),
+  ]);
+  if (asCover + asImage > 0) return;
+  try {
+    fs.unlinkSync(path.join(process.cwd(), "uploads", file));
+  } catch (e) {
+    if (e.code !== "ENOENT") console.error("Error deleting old cover from disk:", e);
+  }
+}
+
 class AssetService {
   /**
    * Helper to normalize asset size from file_size if size is empty/null
@@ -553,6 +567,9 @@ class AssetService {
     }
 
     const assetId = parseInt(id);
+    const oldCover = cover.cover
+      ? (await prisma.asset.findUnique({ where: { id: assetId }, select: { cover: true } }))?.cover
+      : null;
 
     await prisma.asset.update({
       where: {
@@ -600,6 +617,8 @@ class AssetService {
         ...cover,
       },
     });
+
+    if (oldCover && oldCover !== cover.cover) await deleteUnusedUpload(oldCover);
 
     // Delete additional images that were removed in the UI before saving
     const removedImageIds = Array.isArray(payload.removedImageIds)
