@@ -1,25 +1,34 @@
 import { prisma } from "../../db/prisma.mjs";
 import { AuthError } from "../auth/auth.service.mjs";
-import { accessOf } from "../pro/pro.service.mjs";
+import { AD_FREE_TIERS, accessOf } from "../pro/pro.service.mjs";
 import { isCurrency, toMinorUnits } from "../../utils/money.mjs";
 
 const ACCESS = ["normal", "pro", "blocked"];
 const NOTE_MAX = 255;
 const TIER_MAX = 100;
 
-// The PRO rule (see accessOf) written as a database filter
+// The access rule (see accessOf) written as database filters. MySQL compares tier names ignoring case.
+const manualActive = (now) => ({ access: "pro", OR: [{ access_until: null }, { access_until: { gt: now } }] });
+const notAdFreeTier = (field) => ({ OR: [{ [field]: null }, { [field]: { notIn: AD_FREE_TIERS } }] });
 const proWhere = (now) => ({
   access: { not: "blocked" },
   OR: [
-    { access: "pro", OR: [{ access_until: null }, { access_until: { gt: now } }] },
-    { patreon_link: { is: { is_active_patron: true } } },
+    { AND: [manualActive(now), notAdFreeTier("access_tier")] },
+    { patreon_link: { is: { is_active_patron: true, ...notAdFreeTier("membership_tier") } } },
   ],
 });
+// Paying in any tier: PRO or ad-free only
+const payingWhere = (now) => ({
+  access: { not: "blocked" },
+  OR: [manualActive(now), { patreon_link: { is: { is_active_patron: true } } }],
+});
+const adFreeWhere = (now) => ({ AND: [payingWhere(now), { NOT: proWhere(now) }] });
 
 const FILTERS = {
   all: () => ({}),
   pro: proWhere,
-  free: (now) => ({ NOT: proWhere(now) }),
+  adfree: adFreeWhere,
+  free: (now) => ({ NOT: payingWhere(now) }),
   patreon: () => ({ patreon_link: { isNot: null } }),
   manual: () => ({ access: "pro" }),
   blocked: () => ({ access: "blocked" }),
@@ -28,7 +37,7 @@ const FILTERS = {
 // What the admin panel sees about one account. Never includes passwords or Patreon tokens.
 function memberShape(user, now = new Date()) {
   const link = user.patreon_link;
-  const { isPro, proSource } = accessOf(user, link, now);
+  const { isPro, adFree, proSource } = accessOf(user, link, now);
   return {
     id: user.id,
     email: user.email,
@@ -42,6 +51,7 @@ function memberShape(user, now = new Date()) {
     accessNote: user.access_note,
     manualExpired: user.access === "pro" && Boolean(user.access_until) && user.access_until <= now,
     isPro,
+    adFree,
     proSource,
     patreon: link
       ? {
@@ -58,9 +68,10 @@ function memberShape(user, now = new Date()) {
 
 export async function listMembers({ page = 1, limit = 20, search = "", filter = "all" } = {}) {
   const now = new Date();
-  const where = { ...(FILTERS[filter] || FILTERS.all)(now) };
   const q = String(search || "").trim();
-  if (q) where.AND = [{ OR: [{ name: { contains: q } }, { email: { contains: q } }] }];
+  const where = {
+    AND: [(FILTERS[filter] || FILTERS.all)(now), ...(q ? [{ OR: [{ name: { contains: q } }, { email: { contains: q } }] }] : [])],
+  };
 
   const take = Math.min(Math.max(parseInt(limit) || 20, 1), 10000); // 10000 = the admin's "View All"
   const safePage = Math.max(parseInt(page) || 1, 1);
@@ -190,11 +201,12 @@ export async function deletePayment(id, paymentId) {
 export async function memberStats() {
   const now = new Date();
   const activeLink = { is_active_patron: true };
-  const [accounts, confirmed, pro, manual, blocked, google, email, connected, active, pledge, tiers] = await Promise.all([
+  const [accounts, confirmed, pro, adFree, manual, blocked, google, email, connected, active, pledge, tiers] = await Promise.all([
     prisma.siteUser.count(),
     prisma.siteUser.count({ where: { email_verified_at: { not: null } } }),
     prisma.siteUser.count({ where: proWhere(now) }),
-    prisma.siteUser.count({ where: { access: "pro", OR: [{ access_until: null }, { access_until: { gt: now } }] } }),
+    prisma.siteUser.count({ where: adFreeWhere(now) }),
+    prisma.siteUser.count({ where: { AND: [manualActive(now), notAdFreeTier("access_tier")] } }),
     prisma.siteUser.count({ where: FILTERS.blocked() }),
     prisma.siteUser.count({ where: { google_id: { not: null } } }),
     prisma.siteUser.count({ where: { password: { not: null } } }),
@@ -209,7 +221,7 @@ export async function memberStats() {
     }),
   ]);
   return {
-    accounts: { total: accounts, confirmed, pro, free: accounts - pro, manualPro: manual, blocked },
+    accounts: { total: accounts, confirmed, pro, adFree, free: accounts - pro - adFree, manualPro: manual, blocked },
     signInMethods: { email, google, patreon: connected },
     patreon: {
       connected,

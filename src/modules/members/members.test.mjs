@@ -149,6 +149,36 @@ test("blocked beats an active Patreon pledge, survives a Patreon re-check, and n
   assert.equal(await isPro(patron.id), true);
 });
 
+test("Early Access members are ad-free but not PRO: downloads, website status and the admin filters agree", async () => {
+  // By hand
+  await setAccess(plain.id, { access: "pro", tier: "Early Access" });
+  assert.equal(await isPro(plain.id, { refresh: true }), false, "no PRO model downloads");
+  const manual = await proStatus(plain.id);
+  assert.equal(manual.isPro, false);
+  assert.equal(manual.adFree, true);
+
+  // From Patreon (fresh status, so no Patreon call)
+  await prisma.patreonLink.update({ where: { patreon_id: `mb-${stamp}` }, data: { membership_tier: "early access" } });
+  assert.equal(await isPro(patron.id, { refresh: true }), false);
+  const viaPatreon = await proStatus(patron.id);
+  assert.equal(viaPatreon.adFree, true);
+  assert.equal(viaPatreon.membershipTier, "early access");
+
+  assert.deepEqual(emailsOf(await list("filter=adfree")), [mail("patron"), mail("plain")]);
+  assert.deepEqual(emailsOf(await list("filter=pro")), []);
+  assert.deepEqual(emailsOf(await list("filter=free")), [mail("google")]);
+  const member = (await call(`/${plain.id}`)).body.data;
+  assert.equal(member.adFree, true);
+  assert.equal(member.isPro, false);
+
+  // Moving up a tier gives PRO back
+  await setAccess(plain.id, { access: "pro", tier: "Sketch shaper-Pro" });
+  assert.equal(await isPro(plain.id), true);
+  await prisma.patreonLink.update({ where: { patreon_id: `mb-${stamp}` }, data: { membership_tier: TIER } });
+  assert.equal(await isPro(patron.id), true);
+  await setAccess(plain.id, { access: "normal" });
+});
+
 test("bad input is refused with a clear message", async () => {
   assert.equal((await setAccess(plain.id, { access: "admin" })).status, 400);
   assert.equal((await setAccess(plain.id, { access: "pro", until: "not a date" })).status, 400);
@@ -167,7 +197,7 @@ test("dashboard numbers come from the database and use the real tier names", asy
   assert.equal(tier.pledgeCents, 700);
   assert.ok(stats.accounts.total >= 3);
   assert.ok(stats.patreon.activePatrons >= 1);
-  assert.equal(stats.accounts.free, stats.accounts.total - stats.accounts.pro);
+  assert.equal(stats.accounts.free, stats.accounts.total - stats.accounts.pro - stats.accounts.adFree);
 });
 
 test("the PRO rule itself", () => {
@@ -175,13 +205,31 @@ test("the PRO rule itself", () => {
   const later = new Date(now.getTime() + DAY);
   const earlier = new Date(now.getTime() - DAY);
   const active = { is_active_patron: true };
-  assert.deepEqual(accessOf({ access: "normal" }, null, now), { isPro: false, proSource: null });
-  assert.deepEqual(accessOf({ access: "normal" }, active, now), { isPro: true, proSource: "patreon" });
-  assert.deepEqual(accessOf({ access: "pro" }, null, now), { isPro: true, proSource: "manual" });
-  assert.deepEqual(accessOf({ access: "pro", access_until: later }, null, now), { isPro: true, proSource: "manual" });
-  assert.deepEqual(accessOf({ access: "pro", access_until: earlier }, null, now), { isPro: false, proSource: null });
-  assert.deepEqual(accessOf({ access: "pro", access_until: earlier }, active, now), { isPro: true, proSource: "patreon" });
-  assert.deepEqual(accessOf({ access: "blocked" }, active, now), { isPro: false, proSource: "blocked" });
+  const pro = (proSource) => ({ isPro: true, adFree: true, proSource });
+  const adFreeOnly = (proSource) => ({ isPro: false, adFree: true, proSource });
+  const nothing = (proSource) => ({ isPro: false, adFree: false, proSource });
+  assert.deepEqual(accessOf({ access: "normal" }, null, now), nothing(null));
+  assert.deepEqual(accessOf({ access: "normal" }, active, now), pro("patreon"));
+  assert.deepEqual(accessOf({ access: "pro" }, null, now), pro("manual"));
+  assert.deepEqual(accessOf({ access: "pro", access_until: later }, null, now), pro("manual"));
+  assert.deepEqual(accessOf({ access: "pro", access_until: earlier }, null, now), nothing(null));
+  assert.deepEqual(accessOf({ access: "pro", access_until: earlier }, active, now), pro("patreon"));
+  assert.deepEqual(accessOf({ access: "blocked" }, active, now), nothing("blocked"));
+});
+
+test("Early Access only removes ads: by hand or from Patreon, whatever the spelling; other tiers stay PRO", () => {
+  const now = new Date();
+  const early = { is_active_patron: true, membership_tier: " early ACCESS " };
+  assert.deepEqual(accessOf({ access: "pro", access_tier: "Early Access" }, null, now), { isPro: false, adFree: true, proSource: "manual" });
+  assert.deepEqual(accessOf({ access: "normal" }, early, now), { isPro: false, adFree: true, proSource: "patreon" });
+  for (const tier of ["Sketch shaper-Pro", "Sponsor", null]) {
+    assert.equal(accessOf({ access: "pro", access_tier: tier }, null, now).isPro, true, `manual ${tier}`);
+    assert.equal(accessOf({ access: "normal" }, { is_active_patron: true, membership_tier: tier }, now).isPro, true, `patron ${tier}`);
+  }
+  // Early Access set by hand does not hide a PRO pledge on Patreon
+  const proPledge = { is_active_patron: true, membership_tier: "Sponsor" };
+  assert.deepEqual(accessOf({ access: "pro", access_tier: "Early Access" }, proPledge, now), { isPro: true, adFree: true, proSource: "patreon" });
+  assert.deepEqual(accessOf({ access: "blocked", access_tier: "Early Access" }, early, now), { isPro: false, adFree: false, proSource: "blocked" });
 });
 
 // ----- Payments made outside Patreon -----
