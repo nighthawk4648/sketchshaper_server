@@ -24,6 +24,7 @@ class PageService {
 
 		const page = await prisma.page.create({
 			data: {
+				cover: '', // column is required but the admin form has no cover field
 				...payload,
 				slug,
 				...images,
