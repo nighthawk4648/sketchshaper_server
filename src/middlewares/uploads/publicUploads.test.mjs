@@ -4,7 +4,7 @@ import fs from "fs";
 import http from "http";
 import path from "path";
 import express from "express";
-import { isPrivateUpload, publicUploads } from "./publicUploads.mjs";
+import { isPrivateUpload, publicUploads, cacheControlFor, NO_STORE, LONG_CACHE } from "./publicUploads.mjs";
 
 // Real files in the local uploads folder, removed at the end
 const stamp = Date.now();
@@ -68,4 +68,35 @@ test("isPrivateUpload decides on the normalised path", () => {
   assert.equal(isPrivateUpload("/sketchshaper-professional.jpg"), false, "a similar name at the top level is fine");
   assert.equal(isPrivateUpload("/SKETCHSHAPER-PRO/x.skp"), true);
   assert.equal(isPrivateUpload("/a/../temp/x"), true);
+});
+
+test("cacheControlFor: long cache only for public images under uploads", () => {
+  assert.equal(cacheControlFor("/api/uploads/cover-1.webp"), LONG_CACHE);
+  assert.equal(cacheControlFor("/api/uploads/a/b.PNG"), LONG_CACHE);
+  for (const p of [
+    "/api/uploads/model.skp",
+    "/api/uploads/pack.zip",
+    "/api/uploads/sketchshaper-pro/cover.jpg",
+    "/api/uploads/Sketchshaper-Pro/cover.jpg",
+    "/api/uploads/sketchshaper-pro%2Fcover.jpg",
+    "/api/uploads/temp/chunk.png",
+    "/api/assets",
+    "/api/uploads/../x.png",
+    "/api/uploads/%2e%2e/x.png",
+    "/api/uploads/%E0%A4%A.png",
+  ]) {
+    assert.equal(cacheControlFor(p), NO_STORE, p);
+  }
+});
+
+test("express.static keeps a Cache-Control header set before it", async () => {
+  const app = express();
+  app.use("/api/uploads", (req, res, next) => (res.set("Cache-Control", LONG_CACHE), next()), publicUploads);
+  const server = app.listen(0);
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/uploads/${image}`);
+    assert.equal(res.headers.get("cache-control"), LONG_CACHE);
+  } finally {
+    server.close();
+  }
 });

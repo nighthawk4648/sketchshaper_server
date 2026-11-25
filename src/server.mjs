@@ -7,7 +7,7 @@ import { config } from "./config/config.mjs";
 import { corsPolicy } from "./middlewares/corsPolicy.mjs";
 import globalErrorHandler from "./middlewares/errors/globalErrorHandler.mjs";
 import indexRouter from "./routes/api/index.mjs";
-import { publicUploads } from "./middlewares/uploads/publicUploads.mjs";
+import { publicUploads, cacheControlFor, NO_STORE } from "./middlewares/uploads/publicUploads.mjs";
 import { checkRevalidateConfig } from "./utils/revalidate.mjs";
 import { keepWebhookBody } from "./modules/polar/polar.webhook.mjs";
 
@@ -26,12 +26,12 @@ app.use(morgan("dev"));
 
 // Disable caching for API responses to prevent 304 Not Modified issues
 app.use("/api", (req, res, next) => {
-  res.set(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate",
-  );
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
+  const cacheControl = cacheControlFor(req.baseUrl + req.path);
+  res.set("Cache-Control", cacheControl);
+  if (cacheControl === NO_STORE) {
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+  }
   next();
 });
 

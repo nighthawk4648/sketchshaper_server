@@ -35,6 +35,7 @@ const FILTERS = {
   adfree: adFreeWhere,
   free: (now) => ({ NOT: payingWhere(now) }),
   patreon: () => ({ patreon_link: { isNot: null } }),
+  polar: () => ({ polar_subscriptions: { some: {} } }),
   manual: () => ({ access: "pro" }),
   blocked: () => ({ access: "blocked" }),
 };

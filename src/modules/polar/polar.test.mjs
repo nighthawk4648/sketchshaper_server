@@ -156,6 +156,25 @@ test("Sponsor is PRO too, Early Access only removes ads", async () => {
   assert.equal(await isPro(early.user.id), false);
 });
 
+test("the website gets the highest plan and its name, whichever source it comes from", async () => {
+  const sponsor = await member();
+  await deliver(event("subscription.created", { id: subId(), userId: sponsor.user.id, plan: "sponsor" }));
+  const s = await me(sponsor.cookie);
+  assert.deepEqual([s.plan, s.membershipTier], ["sponsor", "Sponsor"]);
+
+  // Set by hand as Early Access, paying PRO on Polar: PRO wins and is named after the Polar plan
+  const mixed = await member({ access: "pro", access_tier: "Early Access" });
+  await deliver(event("subscription.created", { id: subId(), userId: mixed.user.id, plan: "pro" }));
+  const m = await me(mixed.cookie);
+  assert.deepEqual([m.isPro, m.plan, m.membershipTier], [true, "pro", "Sketch shaper PRO"]);
+
+  // Blocked shows no plan at all
+  const blocked = await member({ access: "blocked" });
+  await deliver(event("subscription.created", { id: subId(), userId: blocked.user.id, plan: "sponsor" }));
+  const b = await me(blocked.cookie);
+  assert.deepEqual([b.plan, b.membershipTier], [null, null]);
+});
+
 test("a cancelled plan keeps working until Polar ends it, then stops", async () => {
   const { user, cookie } = await member();
   const id = subId();
@@ -234,6 +253,8 @@ test("the admin member list and filters count Polar members", async () => {
   assert.ok((await ids("pro")).has(pro.user.id) && !(await ids("pro")).has(early.user.id));
   assert.ok((await ids("adfree")).has(early.user.id) && !(await ids("adfree")).has(pro.user.id));
   assert.ok((await ids("free")).has(free.user.id) && !(await ids("free")).has(pro.user.id) && !(await ids("free")).has(early.user.id));
+  const polar = await ids("polar");
+  assert.ok(polar.has(pro.user.id) && polar.has(early.user.id) && !polar.has(free.user.id), "the Polar tab lists everyone who paid on Polar");
   const shown = (await listMembers({ search: pro.user.email })).result[0];
   assert.deepEqual([shown.proSource, shown.polar.plan], ["polar", "pro"]);
 });

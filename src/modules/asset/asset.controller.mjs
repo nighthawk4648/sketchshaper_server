@@ -7,7 +7,8 @@ import { pipeline } from "stream";
 import { prisma } from "../../db/prisma.mjs";
 import { assertProDownload } from "../pro/pro.service.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
-import { notifyGoogleAsset } from "../../utils/googleIndexer.mjs";
+import { notifyGoogleAsset, buildCanonicalAssetUrl } from "../../utils/googleIndexer.mjs";
+import { notifyIndexNow } from "../../utils/indexNow.mjs";
 import { getLinkedParentTags } from "../../utils/linkedAssets.mjs";
 import { TAG, assetTags } from "../../utils/cacheTags.mjs";
 
@@ -240,6 +241,9 @@ class AssetController {
       },
       "URL_UPDATED"
     );
+    notifyIndexNow([
+      buildCanonicalAssetUrl({ ...asset, sub_category: subCategory }),
+    ]);
     const resDoc = responseHandler(201, "Asset created successfully", asset);
     res.status(201).json(resDoc);
   });
@@ -428,6 +432,12 @@ class AssetController {
       },
       "URL_UPDATED"
     );
+    notifyIndexNow([
+      buildCanonicalAssetUrl({
+        ...asset,
+        sub_category: newSubCategory || existingAsset.sub_category,
+      }),
+    ]);
 
     const resDoc = responseHandler(200, "Asset updated successfully", asset);
     res.status(200).json(resDoc);
@@ -625,6 +635,7 @@ class AssetController {
     );
 
     notifyGoogleAsset(existingAsset, "URL_DELETED");
+    notifyIndexNow([buildCanonicalAssetUrl(existingAsset)]);
 
     const resDoc = responseHandler(200, "Asset deleted successfully");
     res.status(200).json(resDoc);

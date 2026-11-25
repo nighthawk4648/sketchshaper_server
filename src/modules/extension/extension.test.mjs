@@ -60,6 +60,7 @@ test.after(async () => {
   fake.close();
   fs.rmSync(filePath, { force: true });
   await prisma.category.delete({ where: { id: category.id } });
+  await prisma.polarSubscription.deleteMany({ where: { site_user: { email: { startsWith: `ext-test-${stamp}-` } } } });
   await prisma.siteUser.deleteMany({ where: { email: { startsWith: `ext-test-${stamp}-` } } });
   await prisma.$disconnect();
 });
@@ -238,6 +239,47 @@ test("'I've joined' picks up a new Patreon pledge straight away; a normal check 
   const calls = fake.calls.identity;
   await call("GET", "/extension/me?refresh=1", { bearer: token });
   assert.equal(fake.calls.identity, calls);
+});
+
+test("Polar members: the extension gets the real plan name, ad-free state and where billing lives", async () => {
+  const polarSub = (user, plan, status = "active") =>
+    prisma.polarSubscription.create({
+      data: {
+        polar_subscription_id: `ext-${stamp}-${user.id}-${plan}`, site_user_id: user.id, polar_customer_id: "c",
+        plan, period: "monthly", status, last_event_at: new Date(),
+      },
+    });
+  const me = async (user) => (await call("GET", "/extension/me", { bearer: (await connect(user)).token })).data.user;
+
+  const cases = [["early_access", false, "Early Access"], ["pro", true, "Sketch shaper PRO"], ["sponsor", true, "Sponsor"]];
+  for (const [plan, isPro, tier] of cases) {
+    const user = await makeUser(`polar-${plan}`);
+    await polarSub(user, plan);
+    const got = await me(user);
+    assert.deepEqual(
+      [got.isPro, got.adFree, got.proSource, got.plan, got.tier, got.billing],
+      [isPro, true, "polar", plan, tier, "polar"],
+      plan,
+    );
+  }
+
+  // A Patreon Early Access pledge next to a Polar PRO plan shows the higher plan, not the Patreon tier
+  const both = await makeUser("both");
+  await prisma.patreonLink.create({
+    data: {
+      site_user_id: both.id, patreon_id: `ext-both-${stamp}`, access_token_enc: encryptToken("a"), refresh_token_enc: encryptToken("r"),
+      token_expires_at: new Date(Date.now() + 3600_000), is_active_patron: true, membership_tier: "Early Access", last_verified_at: new Date(),
+    },
+  });
+  await polarSub(both, "pro");
+  const mixed = await me(both);
+  assert.deepEqual([mixed.isPro, mixed.plan, mixed.tier, mixed.billing], [true, "pro", "Sketch shaper PRO", "polar"]);
+
+  // A failed payment: no access, but billing still points to the website so the card can be fixed
+  const late = await makeUser("late");
+  await polarSub(late, "pro", "past_due");
+  const lapsed = await me(late);
+  assert.deepEqual([lapsed.isPro, lapsed.adFree, lapsed.plan, lapsed.tier, lapsed.billing], [false, false, null, null, "polar"]);
 });
 
 test("starting sign-ins over and over from one address is cut off", async () => {

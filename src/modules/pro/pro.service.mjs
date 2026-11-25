@@ -30,13 +30,33 @@ export function polarSummary(subs = []) {
     : null;
 }
 
+// Plans from low to high. Patreon and hand-set tiers are matched by name; Polar plans carry their own.
+const PLAN_RANK = { early_access: 1, pro: 2, sponsor: 3 };
+export const POLAR_PLAN_NAMES = { early_access: "Early Access", pro: "Sketch shaper PRO", sponsor: "Sponsor" };
+const planOfTier = (name) => (isAdFreeTier(name) ? "early_access" : /sponsor/i.test(String(name || "")) ? "sponsor" : "pro");
+const manualActive = (user, now) => user.access === "pro" && (!user.access_until || user.access_until > now);
+
+// The highest plan someone has today, from every source that counts, and the tier name to show for it.
+// A tie keeps the first source: manual, then Patreon, then Polar.
+export function membershipOf(user, link, now = new Date()) {
+  if (!user || user.access === "blocked") return { plan: null, tier: null };
+  const options = [];
+  if (manualActive(user, now)) options.push({ plan: planOfTier(user.access_tier), tier: user.access_tier || null });
+  if (link?.is_active_patron) options.push({ plan: planOfTier(link.membership_tier), tier: link.membership_tier });
+  for (const s of user.polar_subscriptions || []) {
+    if (POLAR_LIVE_STATUSES.includes(s.status)) options.push({ plan: s.plan, tier: POLAR_PLAN_NAMES[s.plan] || null });
+  }
+  const best = options.reduce((a, b) => (!a || PLAN_RANK[b.plan] > PLAN_RANK[a.plan] ? b : a), null);
+  return best || { plan: null, tier: null };
+}
+
 // The access rule. isPro = PRO models (and PRO in the extension); adFree = no ads, true for every paying member.
 // Blocked is never anything; manual PRO counts until its end date; otherwise an active Patreon pledge or Polar plan.
 // An ad-free-only manual tier does not hide a PRO pledge on Patreon. proSource: "blocked" | "manual" | "patreon" | "polar" | null
 // `user.polar_subscriptions` must be loaded for Polar to count.
 export function accessOf(user, link, now = new Date()) {
   if (user.access === "blocked") return { isPro: false, adFree: false, proSource: "blocked" };
-  const manual = user.access === "pro" && (!user.access_until || user.access_until > now);
+  const manual = manualActive(user, now);
   const patron = Boolean(link?.is_active_patron);
   const polar = polarAccess(user.polar_subscriptions);
   if (manual && !isAdFreeTier(user.access_tier)) return { isPro: true, adFree: true, proSource: "manual" };
@@ -55,13 +75,15 @@ export async function proStatus(siteUserId) {
   const user = await prisma.siteUser.findUnique({ where: { id: siteUserId }, include: withAccessData });
   const link = user?.patreon_link;
   const { isPro, adFree, proSource } = user ? accessOf(user, link) : { isPro: false, adFree: false, proSource: null };
+  const { plan, tier } = membershipOf(user, link);
   return {
     isPro,
     adFree,
     proSource,
     proUntil: proSource === "manual" ? user.access_until : null,
     patreonLinked: Boolean(link),
-    membershipTier: link?.is_active_patron && proSource !== "blocked" ? link.membership_tier : null,
+    plan, // "early_access" | "pro" | "sponsor" | null: the highest plan across Patreon, Polar and manual
+    membershipTier: tier,
     polar: user ? polarSummary(user.polar_subscriptions) : null,
   };
 }

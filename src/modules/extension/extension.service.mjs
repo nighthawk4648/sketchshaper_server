@@ -43,7 +43,7 @@ export async function approveLogin(rawCode, siteUserId) {
 export async function extensionUser(siteUserId, { forceRecheck = false } = {}) {
   await isPro(siteUserId, { refresh: true, ...(forceRecheck && { maxAgeMs: FORCED_RECHECK_MS }) });
   const [user, status] = await Promise.all([
-    prisma.siteUser.findUnique({ where: { id: siteUserId }, select: { name: true, email: true, access_tier: true } }),
+    prisma.siteUser.findUnique({ where: { id: siteUserId }, select: { name: true, email: true } }),
     proStatus(siteUserId),
   ]);
   return {
@@ -52,7 +52,10 @@ export async function extensionUser(siteUserId, { forceRecheck = false } = {}) {
     blocked: status.proSource === "blocked",
     proSource: status.proSource,
     proUntil: status.proUntil,
-    tier: status.membershipTier || (status.proSource === "manual" ? user.access_tier : null),
+    tier: status.membershipTier,
+    plan: status.plan,
+    adFree: status.adFree,
+    billing: status.polar ? "polar" : null, // paid on our website: plan changes and billing live there
     patreonLinked: status.patreonLinked,
   };
 }

@@ -3,6 +3,7 @@ import responseHandler from "../../utils/responseHandler.mjs";
 import blogService from "./blog.service.mjs";
 import { revalidateFrontend } from "../../utils/revalidate.mjs";
 import { TAG } from "../../utils/cacheTags.mjs";
+import { notifyIndexNow, blogUrl } from "../../utils/indexNow.mjs";
 
 class BlogsController {
   createBlog = catchError(async (req, res, next) => {
@@ -43,6 +44,7 @@ class BlogsController {
       files,
     });
     revalidateFrontend([TAG.blogs]);
+    notifyIndexNow([blogUrl(blog)]);
     const resDoc = responseHandler(201, "blog  created successfully", blog);
     res.status(201).json(resDoc);
   });
@@ -98,6 +100,7 @@ class BlogsController {
     });
 
     revalidateFrontend([TAG.blogs, TAG.blog(id)]);
+    notifyIndexNow([blogUrl(blog)]);
 
     // Send response
     const resDoc = responseHandler(200, "blog updated successfully", blog);
