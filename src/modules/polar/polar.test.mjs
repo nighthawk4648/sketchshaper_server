@@ -107,6 +107,22 @@ test("a signature only passes when id, time, body and secret all match", () => {
   assert.equal(ok({ secret: undefined }), false, "no secret configured");
 });
 
+test("a dashboard secret (whsec_ + base64) signs with its decoded bytes; a plain secret with its text", () => {
+  const raw = crypto.randomBytes(32);
+  const dashboard = `whsec_${raw.toString("base64")}`;
+  const now = Date.now();
+  const ts = String(Math.floor(now / 1000));
+  const body = Buffer.from('{"type":"product.updated"}');
+  const signWith = (key) => `v1,${crypto.createHmac("sha256", key).update(`m1.${ts}.`).update(body).digest("base64")}`;
+  const check = (secret, signature) => verifySignature({ id: "m1", timestamp: ts, signature, body, secret, now });
+  assert.equal(check(dashboard, signWith(raw)), true, "how Polar signs for a dashboard secret");
+  assert.equal(check(dashboard, signWith(Buffer.from(dashboard))), true, "the secret's own text is still accepted");
+  assert.equal(check(dashboard, signWith(crypto.randomBytes(32))), false, "another key");
+  assert.equal(check(`whsec_${crypto.randomBytes(32).toString("base64")}`, signWith(raw)), false, "another dashboard secret");
+  assert.equal(check("plain-secret-text", signWith(Buffer.from("plain-secret-text"))), true, "a plain secret, as before");
+  assert.equal(check("whsec_", signWith(Buffer.alloc(0))), false, "an empty dashboard secret never validates");
+});
+
 // ---- webhooks ----
 test("a delivery with a bad signature is refused and changes nothing", async () => {
   const { user } = await member();
