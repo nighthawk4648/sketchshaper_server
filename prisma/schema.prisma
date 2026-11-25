@@ -60,6 +60,27 @@ model SiteUser {
   patreon_link      PatreonLink?
   manual_payments   ManualPayment[]
   extension_logins  ExtensionLogin[]
+  polar_subscriptions PolarSubscription[]
+}
+
+// A paid membership bought through Polar, kept up to date by Polar's webhooks. Restrict: an account that
+// is still being billed cannot be deleted by accident.
+model PolarSubscription {
+  id                   Int      @id @default(autoincrement())
+  site_user_id         Int
+  site_user            SiteUser @relation(fields: [site_user_id], references: [id], onDelete: Restrict)
+  polar_subscription_id String  @unique @db.VarChar(64)
+  polar_customer_id    String   @db.VarChar(64)
+  plan                 String   @db.VarChar(20) // early_access | pro | sponsor (from the product's metadata)
+  period               String   @db.VarChar(10) // monthly | yearly
+  status               String   @db.VarChar(20) // Polar's status: active, canceled, past_due, ...
+  current_period_end   DateTime?
+  cancel_at_period_end Boolean  @default(false)
+  last_event_at        DateTime // time of the newest webhook applied; older ones are ignored
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  @@index([site_user_id])
 }
 
 // A SketchUp sign-in waiting for its owner to press Connect on the website. The extension proves it

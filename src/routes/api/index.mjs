@@ -15,6 +15,7 @@ import galleryRouter from "./gallery.route.mjs";
 import patreonRouter from "./patreon.route.mjs";
 import authRouter from "./auth.route.mjs";
 import googleRouter from "./google.route.mjs";
+import polarRouter from "./polar.route.mjs";
 import membersRouter from "./members.route.mjs";
 import { requireAdminForWrites } from "../../middlewares/auth/requireAdminForWrites.mjs";
 
@@ -49,6 +50,7 @@ indexRouter.use("/gallery", requireAdminForWrites, galleryRouter);
 indexRouter.use("/auth", authRouter);
 indexRouter.use("/google", googleRouter);
 indexRouter.use("/patreon", patreonRouter);
+indexRouter.use("/polar", polarRouter);
 indexRouter.use("/members", membersRouter);
 
 indexRouter.use("/extension-downloads", extensionDownloadRouter);

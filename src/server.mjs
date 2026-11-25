@@ -9,6 +9,7 @@ import globalErrorHandler from "./middlewares/errors/globalErrorHandler.mjs";
 import indexRouter from "./routes/api/index.mjs";
 import { publicUploads } from "./middlewares/uploads/publicUploads.mjs";
 import { checkRevalidateConfig } from "./utils/revalidate.mjs";
+import { keepWebhookBody } from "./modules/polar/polar.webhook.mjs";
 
 // Fix for BigInt serialization
 BigInt.prototype.toJSON = function () {
@@ -18,7 +19,7 @@ BigInt.prototype.toJSON = function () {
 const app = express();
 
 // Middleware
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({ limit: "50mb", verify: keepWebhookBody }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cors(corsPolicy));
 app.use(morgan("dev"));

@@ -22,6 +22,9 @@ const {
   GOOGLE_CLIENT_SECRET,
   GOOGLE_REDIRECT_URI,
   GOOGLE_BASE_URL,
+  POLAR_ACCESS_TOKEN,
+  POLAR_WEBHOOK_SECRET,
+  POLAR_API_URL,
 } = process.env;
 
 export const config = {
@@ -48,4 +51,8 @@ export const config = {
   google_authorize_url: GOOGLE_BASE_URL ? `${GOOGLE_BASE_URL}/authorize` : "https://accounts.google.com/o/oauth2/v2/auth",
   google_token_url: GOOGLE_BASE_URL ? `${GOOGLE_BASE_URL}/token` : "https://oauth2.googleapis.com/token",
   google_userinfo_url: GOOGLE_BASE_URL ? `${GOOGLE_BASE_URL}/userinfo` : "https://openidconnect.googleapis.com/v1/userinfo",
+  polar_access_token: POLAR_ACCESS_TOKEN,
+  polar_webhook_secret: POLAR_WEBHOOK_SECRET,
+  // Production by default; local and test settings point at https://sandbox-api.polar.sh/v1 or a fake
+  polar_api_url: (POLAR_API_URL || "https://api.polar.sh/v1").replace(/\/+$/, ""),
 };

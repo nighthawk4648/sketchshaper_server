@@ -1,6 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import { AuthError } from "../auth/auth.service.mjs";
-import { AD_FREE_TIERS, accessOf } from "../pro/pro.service.mjs";
+import { AD_FREE_TIERS, POLAR_LIVE_STATUSES, POLAR_PRO_PLANS, accessOf, polarSummary } from "../pro/pro.service.mjs";
 import { isCurrency, toMinorUnits } from "../../utils/money.mjs";
 
 const ACCESS = ["normal", "pro", "blocked"];
@@ -10,17 +10,22 @@ const TIER_MAX = 100;
 // The access rule (see accessOf) written as database filters. MySQL compares tier names ignoring case.
 const manualActive = (now) => ({ access: "pro", OR: [{ access_until: null }, { access_until: { gt: now } }] });
 const notAdFreeTier = (field) => ({ OR: [{ [field]: null }, { [field]: { notIn: AD_FREE_TIERS } }] });
+// A Polar subscription that counts today, optionally only for these plans
+const polarLive = (plans) => ({
+  polar_subscriptions: { some: { status: { in: POLAR_LIVE_STATUSES }, ...(plans && { plan: { in: plans } }) } },
+});
 const proWhere = (now) => ({
   access: { not: "blocked" },
   OR: [
     { AND: [manualActive(now), notAdFreeTier("access_tier")] },
     { patreon_link: { is: { is_active_patron: true, ...notAdFreeTier("membership_tier") } } },
+    polarLive(POLAR_PRO_PLANS),
   ],
 });
 // Paying in any tier: PRO or ad-free only
 const payingWhere = (now) => ({
   access: { not: "blocked" },
-  OR: [manualActive(now), { patreon_link: { is: { is_active_patron: true } } }],
+  OR: [manualActive(now), { patreon_link: { is: { is_active_patron: true } } }, polarLive()],
 });
 const adFreeWhere = (now) => ({ AND: [payingWhere(now), { NOT: proWhere(now) }] });
 
@@ -53,6 +58,7 @@ function memberShape(user, now = new Date()) {
     isPro,
     adFree,
     proSource,
+    polar: polarSummary(user.polar_subscriptions),
     patreon: link
       ? {
           patreonId: link.patreon_id,
@@ -78,7 +84,7 @@ export async function listMembers({ page = 1, limit = 20, search = "", filter = 
   const [users, total] = await Promise.all([
     prisma.siteUser.findMany({
       where,
-      include: { patreon_link: true },
+      include: { patreon_link: true, polar_subscriptions: true },
       orderBy: { created_at: "desc" },
       skip: (safePage - 1) * take,
       take,
@@ -92,7 +98,7 @@ export async function listMembers({ page = 1, limit = 20, search = "", filter = 
 }
 
 async function findMember(id) {
-  const user = await prisma.siteUser.findUnique({ where: { id: parseInt(id) || 0 }, include: { patreon_link: true } });
+  const user = await prisma.siteUser.findUnique({ where: { id: parseInt(id) || 0 }, include: { patreon_link: true, polar_subscriptions: true } });
   if (!user) throw new AuthError("Member not found", 404);
   return user;
 }
@@ -116,7 +122,7 @@ export async function setAccess(id, { access, tier = null, until = null, note = 
   const updated = await prisma.siteUser.update({
     where: { id: user.id },
     data: { access, access_tier: cleanTier || null, access_until: accessUntil, access_note: cleanNote || null },
-    include: { patreon_link: true },
+    include: { patreon_link: true, polar_subscriptions: true },
   });
   return memberShape(updated);
 }
