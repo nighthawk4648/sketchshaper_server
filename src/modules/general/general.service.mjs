@@ -1,5 +1,6 @@
 import { prisma } from '../../db/prisma.mjs';
 import isArrayElementExist from '../../utils/isArrayElementExist.mjs';
+import { removeUploads, oldFiles } from '../../utils/uploadFiles.mjs';
 
 class GeneralService {
 	async upsertAboutUs(payload) {
@@ -42,6 +43,7 @@ class GeneralService {
 			update: updateData,
 			create: createData
 		});
+		await removeUploads(oldFiles('aboutUs', existingAboutUs, aboutUs));
 
 		return aboutUs;
 	}
@@ -80,6 +82,7 @@ class GeneralService {
 		delete payload.files;
 		delete payload.slug;
 
+		const before = await prisma.setting.findUnique({ where: { slug: 'settings' } });
 		const settings = await prisma.setting.upsert({
 			where: {
 				slug: 'settings'
@@ -94,6 +97,7 @@ class GeneralService {
 				slug: 'settings'
 			}
 		});
+		await removeUploads(oldFiles('setting', before, settings));
 
 		return settings;
 	}

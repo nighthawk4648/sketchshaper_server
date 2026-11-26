@@ -1,5 +1,6 @@
 import { prisma } from '../../db/prisma.mjs';
 import isArrayElementExist from '../../utils/isArrayElementExist.mjs';
+import { removeUploads, oldFiles } from '../../utils/uploadFiles.mjs';
 
 class SocialService {
 	async createSocial(payload) {
@@ -40,6 +41,7 @@ class SocialService {
 
 		delete payload.files;
 
+		const before = await prisma.social.findUnique({ where: { id: parseInt(id) } });
 		const social = await prisma.social.update({
 			where: {
 				id: parseInt(id),
@@ -49,6 +51,7 @@ class SocialService {
 				...images,
 			},
 		});
+		await removeUploads(oldFiles('social', before, social));
 
 		return social;
 	}
@@ -102,11 +105,13 @@ class SocialService {
 	}
 
 	async deleteSocial(id) {
+		const before = await prisma.social.findUnique({ where: { id: parseInt(id) } });
 		await prisma.social.delete({
 			where: {
 				id: parseInt(id),
 			},
 		});
+		await removeUploads(oldFiles('social', before));
 	}
 }
 

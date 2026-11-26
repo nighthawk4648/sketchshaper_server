@@ -7,6 +7,7 @@ import {
   parseLinkedIds,
   filterExistingAssetIds,
 } from "../../utils/linkedAssets.mjs";
+import { removeUploads, oldFiles } from "../../utils/uploadFiles.mjs";
 import fs from "fs";
 import path from "path";
 
@@ -26,20 +27,6 @@ function convertBigIntToString(obj) {
     return converted;
   }
   return obj;
-}
-
-// A replaced cover file is deleted unless another asset or gallery image still uses it
-async function deleteUnusedUpload(file) {
-  const [asCover, asImage] = await Promise.all([
-    prisma.asset.count({ where: { cover: file } }),
-    prisma.assetImage.count({ where: { image: file } }),
-  ]);
-  if (asCover + asImage > 0) return;
-  try {
-    fs.unlinkSync(path.join(process.cwd(), "uploads", file));
-  } catch (e) {
-    if (e.code !== "ENOENT") console.error("Error deleting old cover from disk:", e);
-  }
 }
 
 class AssetService {
@@ -70,6 +57,8 @@ class AssetService {
    */
   async initializeUpload(payload) {
     const { assetId, totalChunks, totalSize, originalFilename } = payload;
+    // Pieces of uploads the browser never finished are cleared here; not awaited, it never throws
+    chunkUploadHelper.removeStaleSessions();
 
     // Validate asset ID is provided
     if (!assetId) {
@@ -330,12 +319,14 @@ class AssetService {
       });
     }
 
+    const before = await prisma.asset.findUnique({ where: { id: parseInt(id) } });
     const asset = await prisma.asset.update({
       where: { id: parseInt(id) },
       data: {
         cover: images.cover || payload.cover,
       },
     });
+    await removeUploads(oldFiles("asset", before, asset));
 
     return asset;
   }
@@ -618,7 +609,7 @@ class AssetService {
       },
     });
 
-    if (oldCover && oldCover !== cover.cover) await deleteUnusedUpload(oldCover);
+    if (oldCover && oldCover !== cover.cover) await removeUploads([oldCover]);
 
     // Delete additional images that were removed in the UI before saving
     const removedImageIds = Array.isArray(payload.removedImageIds)
@@ -629,17 +620,10 @@ class AssetService {
       const imagesToDelete = await prisma.assetImage.findMany({
         where: { id: { in: removedImageIds }, asset_id: assetId },
       });
-      for (const img of imagesToDelete) {
-        const imgPath = path.join(process.cwd(), "uploads", img.image);
-        try {
-          if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-        } catch (e) {
-          console.error("Error deleting asset image from disk:", e);
-        }
-      }
       await prisma.assetImage.deleteMany({
         where: { id: { in: removedImageIds }, asset_id: assetId },
       });
+      await removeUploads(imagesToDelete.map((img) => img.image));
     }
 
     // Update existing image alts (excluding any staged for removal)
@@ -673,18 +657,6 @@ class AssetService {
       const assetFile = await prisma.assetFile.findUnique({
         where: { asset_id: assetId },
       });
-      if (assetFile?.main_file) {
-        const filePath = path.join(
-          process.cwd(),
-          "uploads",
-          assetFile.main_file,
-        );
-        try {
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        } catch (e) {
-          console.error("Error deleting 3D file from disk:", e);
-        }
-      }
       if (assetFile) {
         await prisma.assetFile.delete({ where: { asset_id: assetId } });
         // Reset size on the asset record
@@ -692,6 +664,7 @@ class AssetService {
           where: { id: assetId },
           data: { size: "" },
         });
+        await removeUploads([assetFile.main_file]);
       }
     }
 
@@ -963,49 +936,20 @@ class AssetService {
   async deleteAsset(id) {
     const assetId = parseInt(id);
 
-    // Get asset with file info
     const asset = await prisma.asset.findUnique({
       where: { id: assetId },
-      include: { file: true },
+      include: { file: true, images: true },
     });
 
     if (!asset) {
       throw new Error("Asset not found");
     }
 
-    // Delete the actual file from disk if it exists
-    if (asset.file && asset.file.main_file) {
-      const filePath = path.join(
-        process.cwd(),
-        "uploads",
-        asset.file.main_file,
-      );
-      try {
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (error) {
-        console.error("Error deleting file from disk:", error);
-        // Continue with database deletion even if file deletion fails
-      }
-    }
-
-    // Delete cover image if it exists
-    if (asset.cover) {
-      const coverPath = path.join(process.cwd(), "uploads", asset.cover);
-      try {
-        if (fs.existsSync(coverPath)) {
-          fs.unlinkSync(coverPath);
-        }
-      } catch (error) {
-        console.error("Error deleting cover image from disk:", error);
-      }
-    }
-
-    // Delete from database (this will cascade delete related AssetFile and AssetImage records)
+    // Cascades to AssetFile and AssetImage rows; their files go after the rows are gone
     await prisma.asset.delete({
       where: { id: assetId },
     });
+    await removeUploads([asset.cover, asset.file?.main_file, ...asset.images.map((i) => i.image)]);
   }
 
   // Raw SQL so the add is atomic and, unlike prisma.update, leaves updated_at alone

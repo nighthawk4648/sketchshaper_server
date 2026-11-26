@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { removeUploads, oldFiles } from "../../utils/uploadFiles.mjs";
 
 class SliderService {
   async createSlider(payload) {
@@ -29,6 +30,7 @@ class SliderService {
       });
     }
 
+    const before = await prisma.slider.findUnique({ where: { id: parseInt(id) } });
     const slider = await prisma.slider.update({
       where: {
         id: parseInt(id),
@@ -39,6 +41,7 @@ class SliderService {
         ...images,
       },
     });
+    await removeUploads(oldFiles("slider", before, slider));
     return slider;
   }
 
@@ -90,11 +93,13 @@ class SliderService {
   }
 
   async deleteSlider(id) {
+    const before = await prisma.slider.findUnique({ where: { id: parseInt(id) } });
     await prisma.slider.delete({
       where: {
         id: parseInt(id),
       },
     });
+    await removeUploads(oldFiles("slider", before));
   }
 }
 

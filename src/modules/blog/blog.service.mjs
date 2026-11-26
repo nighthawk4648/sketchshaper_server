@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { removeUploads, oldFiles } from "../../utils/uploadFiles.mjs";
 import { sanitizeSlug } from "../../utils/slugHelper.mjs";
 import {
   LINKED_ASSET_SELECT,
@@ -105,6 +106,7 @@ class BlogService {
       keywords,
     } = payload;
 
+    const before = await prisma.blog.findUnique({ where: { id: parseInt(id) } });
     const blog = await prisma.blog.update({
       where: {
         id: parseInt(id), // Ensure the ID is an integer
@@ -135,6 +137,7 @@ class BlogService {
     });
 
     await this.syncBlogLinks(blog.id, payload.featured_asset_ids);
+    await removeUploads(oldFiles("blog", before, blog));
 
     return blog;
   }
@@ -196,11 +199,13 @@ class BlogService {
   }
 
   async deleteBlog(id) {
+    const before = await prisma.blog.findUnique({ where: { id: parseInt(id) } });
     await prisma.blog.delete({
       where: {
         id: parseInt(id),
       },
     });
+    await removeUploads(oldFiles("blog", before));
   }
 }
 

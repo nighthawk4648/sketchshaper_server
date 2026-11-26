@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { removeUploads, oldFiles } from "../../utils/uploadFiles.mjs";
 
 class InnovativeFurnituresService {
   async createInnovative(payload) {
@@ -42,6 +43,7 @@ class InnovativeFurnituresService {
     const { title, short_description, urlOne, urlTwo, urlThree, urlFour } =
       payload;
 
+    const before = await prisma.innovativeFurnitures.findUnique({ where: { id: parseInt(id) } });
     const updatedInnovativeFurniture = await prisma.innovativeFurnitures.update(
       {
         where: {
@@ -58,6 +60,7 @@ class InnovativeFurnituresService {
         },
       },
     );
+    await removeUploads(oldFiles("innovativeFurnitures", before, updatedInnovativeFurniture));
 
     return updatedInnovativeFurniture;
   }
@@ -114,11 +117,13 @@ class InnovativeFurnituresService {
   }
 
   async deleteInnovative(id) {
+    const before = await prisma.innovativeFurnitures.findUnique({ where: { id: parseInt(id) } });
     await prisma.innovativeFurnitures.delete({
       where: {
         id: parseInt(id),
       },
     });
+    await removeUploads(oldFiles("innovativeFurnitures", before));
   }
 }
 

@@ -1,5 +1,6 @@
 import { prisma } from '../../db/prisma.mjs';
 import isArrayElementExist from '../../utils/isArrayElementExist.mjs';
+import { removeUploads, oldFiles } from '../../utils/uploadFiles.mjs';
 import { sanitizeSlug } from '../../utils/slugHelper.mjs';
 
 class PageService {
@@ -58,6 +59,7 @@ class PageService {
 		}
 
 		delete payload.files;
+		const before = await prisma.page.findUnique({ where: { id: parseInt(id) } });
 		const page = await prisma.page.update({
 			where: {
 				id: parseInt(id),
@@ -67,6 +69,7 @@ class PageService {
 				...images,
 			},
 		});
+		await removeUploads(oldFiles('page', before, page));
 		return page;
 	}
 
@@ -118,11 +121,13 @@ class PageService {
 	}
 
 	async deletePage(id) {
+		const before = await prisma.page.findUnique({ where: { id: parseInt(id) } });
 		await prisma.page.delete({
 			where: {
 				id: parseInt(id),
 			},
 		});
+		await removeUploads(oldFiles('page', before));
 	}
 }
 

@@ -11,6 +11,7 @@ import { publicUploads, cacheControlFor, NO_STORE } from "./middlewares/uploads/
 import { checkRevalidateConfig } from "./utils/revalidate.mjs";
 import { keepWebhookBody } from "./modules/polar/polar.webhook.mjs";
 import { softNotFound } from "./middlewares/softNotFound.mjs";
+import { cleanupFailedUploads } from "./middlewares/uploads/cleanupFailedUploads.mjs";
 
 // Fix for BigInt serialization
 BigInt.prototype.toJSON = function () {
@@ -25,6 +26,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cors(corsPolicy));
 app.use(morgan("dev"));
 app.use(softNotFound);
+app.use(cleanupFailedUploads);
 
 // Disable caching for API responses to prevent 304 Not Modified issues
 app.use("/api", (req, res, next) => {

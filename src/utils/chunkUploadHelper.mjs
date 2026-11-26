@@ -168,6 +168,22 @@ class ChunkUploadHelper {
     }
   }
 
+  // Removes upload sessions untouched for maxAgeMs (browser closed mid-upload); never throws
+  async removeStaleSessions(maxAgeMs = 24 * 60 * 60 * 1000) {
+    try {
+      const entries = await readdir(this.tempDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const dir = path.join(this.tempDir, entry.name);
+        if ((await stat(dir)).mtimeMs < Date.now() - maxAgeMs) {
+          await fs.promises.rm(dir, { recursive: true, force: true });
+        }
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") console.error("Error removing stale upload sessions:", error);
+    }
+  }
+
   /**
    * Calculate file size from chunks
    */

@@ -16,20 +16,6 @@ const ACCESS_TYPES = ["free", "paid"];
 // Empty or missing means "leave as is" (create defaults to free); anything else must be a known type
 const badAccessType = (value) => value !== undefined && value !== "" && !ACCESS_TYPES.includes(value);
 
-const cleanupUploadedFiles = (files) => {
-  if (Array.isArray(files)) {
-    for (const file of files) {
-      if (file?.path) {
-        try {
-          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        } catch (e) {
-          console.error("Failed to clean up uploaded file:", e);
-        }
-      }
-    }
-  }
-};
-
 class AssetController {
   /**
    * Initialize upload session
@@ -149,7 +135,6 @@ class AssetController {
   createAsset = catchError(async (req, res, next) => {
     // 1. Validate Asset Name
     if (!req.body.name || !req.body.name.trim()) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -159,7 +144,6 @@ class AssetController {
 
     // Validate Asset Slug format (cannot be purely digits)
     if (req.body.slug && /^\d+$/.test(req.body.slug.trim())) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -169,7 +153,6 @@ class AssetController {
     }
 
     if (badAccessType(req.body.access_type)) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -184,7 +167,6 @@ class AssetController {
       isNaN(subCategoryId) ||
       subCategoryId <= 0
     ) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -197,7 +179,6 @@ class AssetController {
       include: { category: true },
     });
     if (!subCategory) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -210,7 +191,6 @@ class AssetController {
       Array.isArray(req.files) &&
       req.files.some((f) => f.fieldname === "cover");
     if (!hasCover) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -253,7 +233,6 @@ class AssetController {
 
     // Validate that ID is numeric
     if (!/^\d+$/.test(id)) {
-      cleanupUploadedFiles(req.files);
       return res.status(404).json({
         statusCode: 404,
         status: "error",
@@ -271,7 +250,6 @@ class AssetController {
       },
     });
     if (!existingAsset) {
-      cleanupUploadedFiles(req.files);
       return res.status(404).json({
         statusCode: 404,
         status: "error",
@@ -299,7 +277,6 @@ class AssetController {
     } = req.body;
 
     if (name !== undefined && (!name || !name.trim())) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -308,7 +285,6 @@ class AssetController {
     }
 
     if (badAccessType(access_type)) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -322,7 +298,6 @@ class AssetController {
       slug !== "" &&
       /^\d+$/.test(String(slug).trim())
     ) {
-      cleanupUploadedFiles(req.files);
       return res.status(400).json({
         statusCode: 400,
         status: "error",
@@ -335,7 +310,6 @@ class AssetController {
     if (sub_category_id !== undefined) {
       const parsedSubId = parseInt(sub_category_id);
       if (isNaN(parsedSubId) || parsedSubId <= 0) {
-        cleanupUploadedFiles(req.files);
         return res.status(400).json({
           statusCode: 400,
           status: "error",
@@ -347,7 +321,6 @@ class AssetController {
         include: { category: true },
       });
       if (!newSubCategory) {
-        cleanupUploadedFiles(req.files);
         return res.status(400).json({
           statusCode: 400,
           status: "error",

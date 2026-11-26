@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { removeUploads, oldFiles } from "../../utils/uploadFiles.mjs";
 
 class GalleryService {
   async createGallery(payload) {
@@ -27,6 +28,7 @@ class GalleryService {
     }
 
     delete payload.files;
+    const before = await prisma.gallery.findUnique({ where: { id: parseInt(id) } });
     const gallery = await prisma.gallery.update({
       where: {
         id: parseInt(id),
@@ -36,6 +38,7 @@ class GalleryService {
         ...images,
       },
     });
+    await removeUploads(oldFiles("gallery", before, gallery));
     return gallery;
   }
 
@@ -92,11 +95,13 @@ class GalleryService {
   }
 
   async deleteGallery(id) {
+    const before = await prisma.gallery.findUnique({ where: { id: parseInt(id) } });
     await prisma.gallery.delete({
       where: {
         id: parseInt(id),
       },
     });
+    await removeUploads(oldFiles("gallery", before));
   }
 }
 

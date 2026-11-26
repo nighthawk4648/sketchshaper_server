@@ -1,5 +1,6 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
+import { removeUploads, oldFiles } from "../../utils/uploadFiles.mjs";
 
 class SupportedByService {
   async createsupportedBy(payload) {
@@ -40,6 +41,7 @@ class SupportedByService {
     // Construct data object for Prisma
     const { title, short_description } = payload;
 
+    const before = await prisma.supportedBy.findUnique({ where: { id: parseInt(id) } });
     const updatedSupportedBy = await prisma.supportedBy.update({
       where: {
         id: parseInt(id), // Ensure the ID is an integer
@@ -54,6 +56,7 @@ class SupportedByService {
         ...(images.imageFive && { imageFive: images.imageFive }),
       },
     });
+    await removeUploads(oldFiles("supportedBy", before, updatedSupportedBy));
 
     return updatedSupportedBy;
   }
@@ -109,11 +112,13 @@ class SupportedByService {
   }
 
   async deleteSupportedBy(id) {
+    const before = await prisma.supportedBy.findUnique({ where: { id: parseInt(id) } });
     await prisma.supportedBy.delete({
       where: {
         id: parseInt(id),
       },
     });
+    await removeUploads(oldFiles("supportedBy", before));
   }
 }
 

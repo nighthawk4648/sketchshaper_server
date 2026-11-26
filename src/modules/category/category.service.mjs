@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma.mjs";
 import isArrayElementExist from "../../utils/isArrayElementExist.mjs";
 import { sanitizeSlug } from "../../utils/slugHelper.mjs";
+import { removeUploads, oldFiles, assetFiles } from "../../utils/uploadFiles.mjs";
 
 class CategoryService {
   async createCategory(payload) {
@@ -36,6 +37,7 @@ class CategoryService {
     }
 
     delete payload.files;
+    const before = await prisma.category.findUnique({ where: { id: parseInt(id) } });
     const category = await prisma.category.update({
       where: {
         id: parseInt(id),
@@ -45,6 +47,7 @@ class CategoryService {
         ...images,
       },
     });
+    await removeUploads(oldFiles("category", before, category));
     return category;
   }
 
@@ -184,11 +187,23 @@ class CategoryService {
   }
 
   async deleteCategory(id) {
+    const categoryId = parseInt(id);
+    // The delete cascades to sub-categories and their assets, so collect all their files first
+    const before = await prisma.category.findUnique({
+      where: { id: categoryId },
+      include: { sub_categories: { select: { image: true } } },
+    });
+    const files = [
+      ...oldFiles("category", before),
+      ...(before?.sub_categories || []).map((s) => s.image),
+      ...(await assetFiles({ sub_category: { category_id: categoryId } })),
+    ];
     await prisma.category.delete({
       where: {
-        id: parseInt(id),
+        id: categoryId,
       },
     });
+    await removeUploads(files);
   }
 }
 
