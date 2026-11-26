@@ -23,6 +23,12 @@ const requireEmail = (body) => {
   return email;
 };
 
+const requireSession = async (req) => {
+  const session = await findSession(readCookie(req, SITE_COOKIE), "website");
+  if (!session?.site_user) throw new AuthError("Please sign in.", 401);
+  return session;
+};
+
 class AuthController {
   register = catchError(async (req, res) => {
     const email = requireEmail(req.body);
@@ -46,6 +52,23 @@ class AuthController {
   me = catchError(async (req, res) => {
     const session = await findSession(readCookie(req, SITE_COOKIE), "website");
     ok(res, "OK", { user: session?.site_user ? await describe(session.site_user) : null });
+  });
+
+  profile = catchError(async (req, res) => {
+    const session = await requireSession(req);
+    const user = await authService.updateName(session.site_user_id, cleanName(req.body?.name));
+    ok(res, "Saved", { user: await describe(user) });
+  });
+
+  changePassword = catchError(async (req, res) => {
+    const session = await requireSession(req);
+    const user = await authService.changePassword({
+      siteUserId: session.site_user_id,
+      keepSessionId: session.id,
+      currentPassword: req.body?.currentPassword,
+      newPassword: req.body?.newPassword,
+    });
+    ok(res, "Password changed", { user: await describe(user) });
   });
 
   logout = catchError(async (req, res) => {

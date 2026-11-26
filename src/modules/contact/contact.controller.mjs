@@ -3,6 +3,8 @@ import path from "path";
 import catchError from "../../middlewares/errors/catchError.mjs";
 import responseHandler from "../../utils/responseHandler.mjs";
 import { PRIVATE_CONTACT_DIR } from "../../middlewares/uploads/contactUpload.mjs";
+import { SITE_COOKIE, findSession, readCookie } from "../../utils/session.mjs";
+import { proStatus } from "../pro/pro.service.mjs";
 import contactService from "./contact.service.mjs";
 import {
   EMAIL_PATTERN,
@@ -112,6 +114,15 @@ class ContactController {
       attachment_size = req.file.size;
     }
 
+    // The plan comes from the signed-in session, never from the form. A failed lookup must not lose the message.
+    let member_plan = null;
+    try {
+      const session = await findSession(readCookie(req, SITE_COOKIE), "website");
+      if (session) member_plan = (await proStatus(session.site_user_id)).plan;
+    } catch (err) {
+      console.error("Could not look up the sender's plan:", err.message);
+    }
+
     try {
       const contactMessage = await contactService.createContactMessage({
         name,
@@ -126,6 +137,7 @@ class ContactController {
         attachment_mime,
         attachment_size,
         message,
+        member_plan,
       });
 
       res

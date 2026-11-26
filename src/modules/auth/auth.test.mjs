@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
+import bcrypt from "bcrypt";
 import { prisma } from "../../db/prisma.mjs";
 import authRouter from "../../routes/api/auth.route.mjs";
 import globalErrorHandler from "../../middlewares/errors/globalErrorHandler.mjs";
@@ -8,11 +9,13 @@ import { requireAdminForWrites } from "../../middlewares/auth/requireAdminForWri
 import { isTrustedSiteOrigin } from "../../middlewares/auth/trustedOrigin.mjs";
 import { devOutbox } from "../../utils/mailer.mjs";
 import { rateLimiter } from "../../utils/rateLimit.mjs";
+import { createSession } from "../../utils/session.mjs";
 
 // Runs against the local dev database; every user created here is removed at the end
 const stamp = Date.now();
 const mail = (n) => `auth-test-${stamp}-${n}@example.test`;
 const PASSWORD = "a long enough password";
+const fakeReq = { ip: "1.1.1.1", get: () => "test" };
 
 const app = express();
 app.use(express.json());
@@ -226,6 +229,57 @@ test("a password reset on a confirmed account keeps its Patreon link", async () 
   await post("/auth/forgot-password", { email });
   await post("/auth/reset-password", { token: tokenFromLastMail(email), password: "a new password 123" });
   assert.equal(await prisma.patreonLink.count({ where: { site_user_id: user.id } }), 1);
+});
+
+const IP = { "cf-connecting-ip": "10.9.9.4" }; // its own visitor address, so earlier tests do not use up the limits
+const loginCookie = async (email, password) => cookieOf(await post("/auth/login", { email, password }, IP)).split(";")[0];
+const meOf = async (cookie) => (await (await fetch(`${base}/auth/me`, { headers: { Cookie: cookie } })).json()).data.user;
+
+test("profile saves the name for a signed-in visitor and refuses everyone else", async () => {
+  assert.equal((await post("/auth/profile", { name: "Nobody" }, IP)).status, 401);
+  const email = mail("profile");
+  await prisma.siteUser.create({ data: { email, password: await bcrypt.hash(PASSWORD, 10), name: "Old" } });
+  const cookie = await loginCookie(email, PASSWORD);
+  const res = await post("/auth/profile", { name: "  New Name  " }, { ...IP, Cookie: cookie });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).data.user.name, "New Name");
+  assert.equal((await meOf(cookie)).name, "New Name");
+  assert.equal((await prisma.siteUser.findUnique({ where: { email } })).name, "New Name");
+});
+
+test("change-password checks the current password and signs out the other sessions", async () => {
+  const email = mail("change");
+  const NEW = "my second password";
+  await prisma.siteUser.create({ data: { email, password: await bcrypt.hash(PASSWORD, 10) } });
+  assert.equal((await post("/auth/change-password", { currentPassword: PASSWORD, newPassword: NEW }, IP)).status, 401);
+
+  const here = await loginCookie(email, PASSWORD);
+  const other = await loginCookie(email, PASSWORD);
+  const change = (body) => post("/auth/change-password", body, { ...IP, Cookie: here });
+  assert.equal((await change({ currentPassword: "not my password", newPassword: NEW })).status, 400);
+  assert.equal((await change({ currentPassword: PASSWORD, newPassword: "short" })).status, 400);
+  assert.equal((await meOf(other)).hasPassword, true);
+
+  const res = await change({ currentPassword: PASSWORD, newPassword: NEW });
+  assert.equal(res.status, 200);
+  const user = (await res.json()).data.user;
+  assert.equal(user.hasPassword, true);
+  assert.equal(user.password, undefined);
+  assert.equal((await post("/auth/login", { email, password: PASSWORD }, IP)).status, 401);
+  assert.equal((await post("/auth/login", { email, password: NEW }, IP)).status, 200);
+  assert.equal(await meOf(other), null, "the other session ended");
+  assert.equal((await meOf(here)).email, email, "this browser stays signed in");
+});
+
+test("change-password on an account without a password points to the email link", async () => {
+  const email = mail("nopass");
+  const user = await prisma.siteUser.create({ data: { email, google_id: `auth-test-${stamp}-g1` } });
+  const { token } = await createSession({ kind: "website", siteUserId: user.id, ttlMs: 60_000 }, fakeReq);
+  const cookie = `ss_site=${token}`;
+  assert.equal((await meOf(cookie)).hasPassword, false);
+  const res = await post("/auth/change-password", { currentPassword: "x", newPassword: PASSWORD }, { ...IP, Cookie: cookie });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).message, /no password yet/);
 });
 
 test("writes from other websites are refused in production", () => {

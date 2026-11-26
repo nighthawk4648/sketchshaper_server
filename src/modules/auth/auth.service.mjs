@@ -4,6 +4,7 @@ import { prisma } from "../../db/prisma.mjs";
 import { sendMail } from "../../utils/mailer.mjs";
 import * as templates from "../../utils/emailTemplates.mjs";
 import { deleteSiteUserSessions } from "../../utils/session.mjs";
+import { passwordProblem } from "./auth.validation.mjs";
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TTL_MS = 60 * 60 * 1000;
@@ -63,6 +64,7 @@ export const publicUser = (u) => ({
   email: u.email,
   name: u.name,
   emailVerified: Boolean(u.email_verified_at),
+  hasPassword: Boolean(u.password),
 });
 
 class AuthService {
@@ -104,6 +106,28 @@ class AuthService {
       throw new AuthError("Invalid email or password.", 401);
     }
     return user;
+  }
+
+  updateName(siteUserId, name) {
+    return prisma.siteUser.update({ where: { id: siteUserId }, data: { name } });
+  }
+
+  async changePassword({ siteUserId, keepSessionId, currentPassword, newPassword }) {
+    const user = await prisma.siteUser.findUnique({ where: { id: siteUserId } });
+    if (!user?.password) {
+      throw new AuthError("This account has no password yet. Use the email link to set one.", 400);
+    }
+    const same = await bcrypt.compare(typeof currentPassword === "string" ? currentPassword : "", user.password);
+    if (!same) throw new AuthError("Your current password is wrong.", 400);
+    const problem = passwordProblem(newPassword);
+    if (problem) throw new AuthError(problem, 400);
+    const saved = await prisma.siteUser.update({
+      where: { id: user.id },
+      data: { password: await bcrypt.hash(newPassword, 10) },
+    });
+    // Sign out anyone else who had the old password; this browser stays signed in
+    await prisma.session.deleteMany({ where: { site_user_id: user.id, NOT: { id: keepSessionId } } });
+    return saved;
   }
 
   async verifyEmail(token) {

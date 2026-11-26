@@ -28,6 +28,16 @@ authRouter.post(
 authRouter.get("/me", authController.me);
 authRouter.post("/logout", authController.logout);
 authRouter.post(
+  "/profile",
+  rateLimiter({ windowMs: 10 * MIN, max: 30, key: byIp("profile") }),
+  authController.profile,
+);
+authRouter.post(
+  "/change-password",
+  rateLimiter({ windowMs: 10 * MIN, max: 10, key: byIp("change-password") }),
+  authController.changePassword,
+);
+authRouter.post(
   "/verify-email",
   rateLimiter({ windowMs: 10 * MIN, max: 30, key: byIp("verify") }),
   authController.verifyEmail,

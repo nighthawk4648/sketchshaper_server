@@ -165,6 +165,7 @@ model ContactMessage {
   attachment_mime String?  @db.VarChar(100)
   attachment_size Int? // bytes
   message         String   @db.LongText
+  member_plan     String?  @db.VarChar(20) // early_access | pro | sponsor when a signed-in paying member sent it
   status          String   @default("NEW") @db.VarChar(20)
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt

@@ -59,7 +59,7 @@ export async function findSession(token, kind) {
     where: { token_hash: hashToken(token) },
     include: {
       admin: { select: { id: true, email: true } },
-      site_user: { select: { id: true, email: true, name: true, email_verified_at: true } },
+      site_user: { select: { id: true, email: true, name: true, email_verified_at: true, password: true } },
     },
   });
   if (!session || session.kind !== kind || session.expires_at <= new Date()) {
